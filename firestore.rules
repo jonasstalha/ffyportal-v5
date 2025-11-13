@@ -1,0 +1,1017 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    // Users collection rules
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null && 
+        (request.auth.token.email == 'ablaziz@gmail.com' || 
+         request.auth.token.email.matches('.*@admin[.]com$'));
+    }
+
+    // Production Reports collection rules
+    match /productionReports/{reportId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && 
+        (request.resource.data.userId == request.auth.uid ||
+         request.auth.token.email == 'ablaziz@gmail.com' ||
+         request.auth.token.email.matches('.*@admin[.]com$'));
+    }
+
+    // Reception Entries (Suivi & Contrôle de Réception)
+    function isValidReceptionEntry() {
+      let data = request.resource.data;
+      return data.lotNumber is string
+        && data.receptionDateTime is string
+        && data.farm is string
+        && data.variety is string
+        && data.quantity is string;
+    }
+
+    // Packaging traceability (Suivi Emballages)
+    function isValidEmballageLot() {
+      let data = request.resource.data;
+      return data.lotNumber is string
+        && data.status is string && (data.status in ['brouillon', 'en_cours', 'termine'])
+        && data.emballageData is map
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (data.archived is bool || !("archived" in data))
+        && (data.archivedAt is timestamp || !("archivedAt" in data))
+        && data.createdBy is string; // must be the owner's UID
+    }
+
+    match /packaging_traces/{docId} {
+      // Any authenticated user can read
+      allow read: if isAuthenticated();
+      // Create must be valid and createdBy must match current user
+      allow create: if isAuthenticated()
+        && isValidEmballageLot()
+        && request.resource.data.createdBy == request.auth.uid;
+      // Update must be valid and only by owner; createdBy cannot change
+      allow update: if isAuthenticated()
+        && isValidEmballageLot()
+        && resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdBy == resource.data.createdBy;
+      // Delete only by owner
+      allow delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
+    }
+
+    match /reception-entries/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidReceptionEntry();
+      allow update: if isAuthenticated(); // Allow update for controle fields
+      allow delete: if isAuthenticated();
+    }
+
+    // Reception Forms rules
+    match /receptionForms/{document} {
+      allow read: if request.auth != null; // Allow authenticated users to read
+      allow write: if request.auth != null; // Allow authenticated users to write
+    }
+
+    // Receptions collection rules
+    match /receptions/{document} {
+      // Function to validate reception data structure
+      function isValidReceptionData() {
+        let data = request.resource.data;
+        return data.category in ['conventionnel', 'biologique']
+          && data.header is map
+          && data.header.title is string
+          && data.header.dateReport is string
+          && data.header.responsable is string
+          && data.header.bonLivraison is string
+          && data.header.compagne is string
+          && data.rows is list
+          && data.createdAt is string
+          && data.updatedAt is string;
+      }
+
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() 
+        && isValidReceptionData();
+      allow update: if isAuthenticated() 
+        && isValidReceptionData()
+        && request.resource.data.createdAt == resource.data.createdAt;  // Can't modify creation date
+      allow delete: if isAuthenticated();
+    }
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isValidFarmData() {
+      return request.resource.data.name is string
+        && request.resource.data.location is string
+        && request.resource.data.code is string
+        && request.resource.data.active is bool;
+    }
+
+    function isValidAvocadoTrackingData() {
+      let data = request.resource.data;
+      return data.harvest is map
+        && data.harvest.harvestDate is string
+        && data.harvest.farmLocation is string
+        && data.harvest.farmerId is string
+        && data.harvest.lotNumber is string
+        && data.harvest.variety is string
+        && data.transport is map
+        && data.transport.lotNumber is string
+        && data.transport.transportCompany is string
+        && data.transport.driverName is string
+        && data.transport.vehicleId is string
+        && data.transport.departureDateTime is string
+        && data.transport.arrivalDateTime is string
+        && data.sorting is map
+        && data.sorting.lotNumber is string
+        && data.sorting.sortingDate is string
+        && data.sorting.qualityGrade is string
+        && data.sorting.rejectedCount is number
+        && data.packaging is map
+        && data.packaging.lotNumber is string
+        && data.packaging.packagingDate is string
+        && data.packaging.boxId is string
+        && data.packaging.workerIds is list
+        && data.packaging.netWeight is number
+        && data.packaging.avocadoCount is number
+        && data.packaging.boxType is string
+        && data.storage is map
+        && data.storage.boxId is string
+        && data.storage.entryDate is string
+        && data.storage.storageTemperature is number
+        && data.storage.storageRoomId is string
+        && data.storage.exitDate is string
+        && data.export is map
+        && data.export.boxId is string
+        && data.export.loadingDate is string
+        && data.export.containerId is string
+        && data.export.driverName is string
+        && data.export.vehicleId is string
+        && data.export.destination is string
+        && data.delivery is map
+        && data.delivery.boxId is string
+        && data.delivery.estimatedDeliveryDate is string
+        && data.delivery.actualDeliveryDate is string
+        && data.delivery.clientName is string
+        && data.delivery.clientLocation is string
+        && data.delivery.notes is string;
+    }
+
+    function isValidWarehouseData() {
+      return request.resource.data.name is string
+        && request.resource.data.location is string
+        && request.resource.data.capacity is number
+        && request.resource.data.code is string
+        && request.resource.data.active is bool;
+    }
+
+    function isValidLotData() {
+      let data = request.resource.data;
+      return data.lotNumber is string
+        && data.status is string && (data.status == 'active' || data.status == 'completed' || data.status == 'cancelled')
+        && data.createdAt is string
+        && data.updatedAt is string
+        && data.harvest is map
+        && data.harvest.date is string
+        && data.harvest.farmId is string
+        && data.harvest.farmName is string
+        && data.harvest.farmerId is string
+        && data.harvest.quantity is number
+        && data.harvest.quality is string
+        && data.harvest.defects is list
+        && data.harvest.notes is string
+        && data.transport is map
+        && data.transport.company is string
+        && data.transport.driverName is string
+        && data.transport.vehicleNumber is string
+        && data.transport.departureTime is string
+        && data.transport.arrivalTime is string
+        && data.transport.temperature is number
+        && data.transport.notes is string
+        && data.sorting is map
+        && data.sorting.date is string
+        && data.sorting.quantity is number
+        && data.sorting.quality is string
+        && data.sorting.defects is list
+        && data.sorting.notes is string
+        && data.packaging is map
+        && data.packaging.date is string
+        && data.packaging.quantity is number
+        && data.packaging.quality is string
+        && data.packaging.boxIds is list
+        && data.packaging.packagingType is string
+        && data.packaging.boxTypes is list
+        && data.packaging.netWeights is list
+        && data.packaging.avocadoCounts is list
+        && data.packaging.workerIds is list
+        && data.packaging.notes is string
+        && data.storage is map
+        && data.storage.warehouseId is string
+        && data.storage.location is string
+        && data.storage.temperature is number
+        && data.storage.humidity is number
+        && data.storage.entryDate is string
+        && data.storage.exitDate is string
+        && data.storage.notes is string
+        && data.export is map
+        && data.export.date is string
+        && data.export.destination is string
+        && data.export.quantity is number
+        && data.export.quality is string
+        && data.export.notes is string
+        && data.delivery is map
+        && data.delivery.date is string
+        && data.delivery.customer is string
+        && data.delivery.quantity is number
+        && data.delivery.quality is string
+        && data.delivery.notes is string;
+    }
+
+    // ✅ Client Orders collection - accessible to all authenticated users with validation
+    function isValidClientOrder() {
+      let data = request.resource.data;
+      return data.orderNumber is string
+        && data.clientName is string
+        && data.clientEmail is string
+        && data.products is list
+        && data.status is string
+        && (data.status in ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])
+        && data.orderDate is string
+        && data.requestedDeliveryDate is string
+        && data.totalAmount is number
+        && data.priority is string
+        && (data.priority in ['low', 'medium', 'high'])
+        && data.shippingAddress is map
+        && data.paymentStatus is string;
+    }
+
+    match /client-orders/{orderId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidClientOrder();
+      allow update: if isAuthenticated() && isValidClientOrder();
+      allow delete: if isAuthenticated();
+    }
+
+    // ✅ Avocado Orders collection - accessible to all authenticated users
+    match /avocado_orders/{orderId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Categories
+    match /categories/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.name is string
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isAuthenticated()
+        && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Documents
+    match /documents/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.name is string
+        && request.resource.data.categoryId is string
+        && request.resource.data.url is string
+        && request.resource.data.uploadedAt is timestamp
+        && request.resource.data.uploadedBy == request.auth.uid;
+      allow update, delete: if isAuthenticated()
+        && resource.data.uploadedBy == request.auth.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (isOwner(userId) || isAdmin());
+    }
+
+    // Allow reading all users for messaging functionality (simplified)
+    match /users/{document=**} {
+      allow read: if isAuthenticated();
+    }
+
+    // Farms
+    match /farms/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidFarmData();
+      allow update: if isAuthenticated() && isValidFarmData();
+      allow delete: if isAuthenticated();
+    }
+
+    // Lots
+    match /lots/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidLotData();
+      allow update: if isAuthenticated() && isValidLotData();
+      allow delete: if isAuthenticated();
+    }
+
+    // Public read access to lots
+    match /lots/{document=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Universal lots (for synchronization between quality control and production)
+    match /universal_lots/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Warehouses
+    match /warehouses/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidWarehouseData();
+      allow update: if isAuthenticated() && isValidWarehouseData();
+      allow delete: if isAuthenticated();
+    }
+
+    // Salles (French alias for warehouses) - allow same access/validation as /warehouses
+    match /salles/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidWarehouseData();
+      allow update: if isAuthenticated() && isValidWarehouseData();
+      allow delete: if isAuthenticated();
+    }
+
+    // Avocado tracking
+    match /avocado-tracking/{documentId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // PDF reports
+    match /pdfReports/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.lotNumber is string;
+      allow update: if isAuthenticated() && request.resource.data.lotNumber is string;
+      allow delete: if isAuthenticated();
+    }
+
+    // Packing Lists - client-side editable packing lists saved by users
+    function isValidPackingList() {
+      let data = request.resource.data;
+      return data.id is string
+        && data.lotNumber is string
+        && data.status is string && (data.status in ['brouillon', 'en_cours', 'termine'])
+        && data.formData is map
+        && data.createdAt is string
+        && data.updatedAt is string
+        && data.createdBy is string;
+    }
+
+    match /packing_lists/{listId} {
+      // Owners can read their own packing lists; admins could be added later
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.createdBy;
+      allow create: if isAuthenticated() && isValidPackingList() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAuthenticated() && isValidPackingList() && resource.data.createdBy == request.auth.uid && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Inventory
+    match /inventory/{itemId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Consumption tracking for production
+    match /consumption/{consumptionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Entrepots
+    match /entrepots/{documentId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated() && request.auth.uid != null;
+    }
+
+    // Boxes
+    match /boxes/{boxId} {
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Files subcollection for multiple uploads per box
+      match /files/{fileId} {
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      }
+    }
+
+    // Archifageboxes
+    match /Archifageboxes/{boxId} {
+      allow read, write: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      // Factures subcollection
+      match /factures/{factureId} {
+        allow read, write: if isAuthenticated() && resource.data.uploadedBy == request.auth.uid;
+      }
+    }
+
+    // Containers
+    match /containers/{containerId} {
+      allow read, write: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // Factures collection (for uploaded invoices)
+    match /factures/{factureId} {
+      allow read, write: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // Logistics archives
+    match /logistics-archives/{docId} {
+      // Allow create if the user is authenticated and is creating their own document
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Allow read, update, delete if the user is authenticated and owns the document
+      allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // Archive boxes
+    match /archive-boxes/{boxId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      // Files subcollection
+      match /files/{fileId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && get(/databases/$(database)/documents/archive-boxes/$(boxId)).data.userId == request.auth.uid;
+      }
+    }
+
+    // Public access for production_suivi (for SuiviProduction)
+    match /production_suivi/{docId} {
+      allow read, write: if true;
+    }
+
+    // Validation function for quality control lot data
+    function isValidQualityControlLot() {
+      let data = request.resource.data;
+      return data.lotNumber is string
+        && data.formData is map
+        && data.formData.date is string
+        && data.formData.product is string
+        && data.formData.variety is string
+        && data.formData.campaign is string
+        && data.formData.palettes is list
+        && data.status is string
+        && (data.status in ['draft', 'completed', 'submitted', 'chief_approved', 'chief_rejected', 'error'])
+        && data.phase is string
+        && (data.phase in ['controller', 'chief'])
+        && data.createdAt != null
+        && data.updatedAt != null;
+    }
+
+    // Quality Control Lots collection with validation and filtering
+    match /quality_control_lots/{lotId} {
+      // Allow reading all lots for authenticated users (filtering happens in client)
+      allow read: if isAuthenticated();
+      
+      // Allow creating new lots (they start as draft)
+      allow create: if isAuthenticated() && isValidQualityControlLot();
+      
+      // Allow updating lots (including marking as completed)
+      allow update: if isAuthenticated() && isValidQualityControlLot();
+      
+      // Allow deleting any lot if authenticated
+      allow delete: if isAuthenticated();
+    }
+
+    // Quality Control Reports collection  
+    match /quality_reports/{reportId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Quality Rapports collection
+    match /qualityRapports/{rapportId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Quality Control Images collection
+    match /quality_control_images/{imageId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Reception archives (Suivi Réception historical forms)
+    function isValidReceptionArchive() {
+      let data = request.resource.data;
+      // Allow serverTimestamp() fields; do not strictly require non-null during create
+      return data.lotNumber is string
+        && data.data is map;
+    }
+
+    match /reception_archives/{archiveId} {
+      allow read: if isAuthenticated();
+  allow create: if isAuthenticated() && isValidReceptionArchive();
+  allow update: if isAuthenticated() && isValidReceptionArchive();
+      allow delete: if isAuthenticated();
+    }
+
+    // New Reception Controls collection (Controle à la Réception)
+    function isValidReceptionControl() {
+      let data = request.resource.data;
+      return data.lotNumber is string
+        && data.status is string
+        && (data.status in ['brouillon', 'en_cours', 'termine'])
+        && data.data is map
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (data.archived is bool || !("archived" in data))
+        && (data.archivedAt is timestamp || !("archivedAt" in data));
+    }
+
+    match /reception_controls/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidReceptionControl();
+      allow update: if isAuthenticated() && isValidReceptionControl();
+      allow delete: if isAuthenticated();
+    }
+
+    // Déchets archives (Fiche Suivi Déchets)
+    function isValidDechetArchive() {
+      let data = request.resource.data;
+      return data.lotNumber is string && data.data is map;
+    }
+
+    match /dechet_archives/{archiveId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidDechetArchive();
+      allow update: if isAuthenticated() && isValidDechetArchive();
+      allow delete: if isAuthenticated();
+    }
+
+    // Shared lots for production/quality sync
+    match /shared_lots/{documentId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Multi-Lot Management collection
+    function isValidMultiLotData() {
+      let data = request.resource.data;
+      return data.lotNumber is string
+        && data.status is string
+        && (data.status in ['draft', 'in-progress', 'completed', 'archived'])
+        && data.currentStep is number
+        && data.completedSteps is list
+        && data.assignedUsers is list
+        && data.globallyAccessible is bool
+        && data.createdBy is string
+        && data.harvest is map
+        && data.transport is map
+        && data.sorting is map
+        && data.packaging is map
+        && data.storage is map
+        && data.export is map
+        && data.delivery is map;
+    }
+
+    match /multi_lots/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidMultiLotData();
+      allow update: if isAuthenticated() && isValidMultiLotData();
+      allow delete: if isAuthenticated();
+    }
+
+    // Personnel Management collection - secure access
+    function isValidPersonnelData() {
+      let data = request.resource.data;
+      return data.firstName is string
+        && data.lastName is string
+        && data.position is string
+        && data.department is string
+        && data.hourlyRate is number
+        && data.status is string;
+    }
+
+    match /personnel/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPersonnelData();
+      allow update: if isAuthenticated() && isValidPersonnelData();
+      allow delete: if isAuthenticated();
+    }
+
+    // Work Schedules collection - secure salary data management
+    function isValidWorkSchedule() {
+      let data = request.resource.data;
+      return data.employeeId is string
+        && data.date is string
+        && data.entryTime is string
+        && data.exitTime is string
+        && data.pauseDuration is number
+        && data.pauseDuration >= 0
+        && data.pauseDuration <= 480  // Max 8 hours pause
+        && data.machineCollapseDuration is number
+        && data.machineCollapseDuration >= 0
+        && data.machineCollapseDuration <= 480  // Max 8 hours machine breakdown
+        && data.hoursWorked is number
+        && data.hoursWorked >= 0
+        && data.hoursWorked <= 24  // Max 24 hours per day
+        && data.salary is number
+        && data.salary >= 0  // Salary cannot be negative
+        && data.salary <= 2000  // Max reasonable daily salary (approx 24h * 80 MAD/h)
+        && data.status is string
+        && (data.status in ['present', 'absent', 'late', 'overtime'])
+        && data.checked is bool;
+    }
+
+    match /work_schedules/{documentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidWorkSchedule();
+      allow update: if isAuthenticated() && isValidWorkSchedule();
+      allow delete: if isAuthenticated();
+    }
+
+    // Messages collection for communication dashboard
+    function isValidMessage() {
+      let d = request.resource.data;
+      // Required base fields
+      return d.senderEmail is string
+        && d.senderName is string
+        && d.content is string
+        && d.priority is string && (d.priority in ['low', 'medium', 'high'])
+        && d.read is bool
+        // Timestamps stored as server timestamps
+        && d.timestamp is timestamp
+        && d.createdAt is timestamp
+        && d.updatedAt is timestamp
+        // Optional/nullable recipient fields allowed
+        && (d.recipientEmail is string || d.recipientEmail == null || !('recipientEmail' in d))
+        && (d.recipientName is string || d.recipientName == null || !('recipientName' in d));
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      // Any authenticated user can create a message (broadcast or direct)
+      allow create: if isAuthenticated() && isValidMessage();
+      // Updates allowed to mark as read or edit content/priority by sender; enforce schema
+      allow update: if isAuthenticated()
+        && isValidMessage()
+        && (
+          // Marking read is allowed for the addressed recipient or broadcast recipient
+          (
+            request.resource.data.read == true &&
+            // Permit anyone authenticated to mark as read on the client app
+            true
+          )
+          ||
+          // Otherwise, only the original sender can change message content/priority
+          (
+            resource.data.senderEmail == request.auth.token.email
+          )
+        );
+      // Deletion permitted to sender only
+      allow delete: if isAuthenticated() && resource.data.senderEmail == request.auth.token.email;
+    }
+
+    // Communication Notifications collection
+    function isValidCommunicationNotification() {
+      let d = request.resource.data;
+      return d.content is string
+        && d.read is bool
+        && d.timestamp is timestamp
+        && d.createdAt is timestamp
+        && d.updatedAt is timestamp;
+    }
+
+    match /communication-notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      // Any authenticated user in the app can create notifications (adjust to roles if needed)
+      allow create: if isAuthenticated() && isValidCommunicationNotification();
+      // Allow marking as read and safe edits; enforce schema
+      allow update: if isAuthenticated() && isValidCommunicationNotification();
+      // Allow deletion by creators/admins if you store createdBy; fallback to any authenticated
+      allow delete: if isAuthenticated();
+    }
+
+    // Expeditions collection for logistics expedition forms
+    function isValidExpedition() {
+      let data = request.resource.data;
+      return data.id is string
+        && data.name is string
+        && data.date is string
+        && data.headerData is map
+        && data.rows is list
+        && data.createdAt != null
+        && data.updatedAt != null;
+    }
+
+    match /expeditions/{expeditionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidExpedition();
+      allow update: if isAuthenticated() && isValidExpedition();
+      allow delete: if isAuthenticated();
+    }
+
+    // Consumption Reports collection (Rapports de Consommation Globale)
+    function isValidConsumptionReport() {
+      let data = request.resource.data;
+      return data.date is string
+        && data.employee is string
+        && data.shift is string
+        && (data.shift in ['matin', 'apres-midi', 'nuit'])
+        && data.entrants is number
+        && data.entrants >= 0
+        && data.emballes is number
+        && data.emballes >= 0
+        && data.dechets is number
+        && data.dechets >= 0
+        && data.unfojund is number
+        && data.unfojund >= 0
+        && data.workerAllocations is number
+        && data.workerAllocations >= 0
+        && data.numberOfBeneficiaries is number
+        && data.numberOfBeneficiaries >= 0
+        && data.pertes is number
+        && data.tauxDechets is number
+        && data.tauxDechets >= 0
+        && data.tauxDechets <= 100
+        && data.tauxPertes is number
+        && data.tauxPertes >= 0
+        && data.tauxPertes <= 100
+        && data.qualityGrade is string
+        && (data.qualityGrade in ['A', 'B', 'C'])
+        && data.temperature is number
+        && data.humidity is number
+        && data.humidity >= 0
+        && data.humidity <= 100
+        && data.processedHours is number
+        && data.processedHours >= 0
+        && data.processedHours <= 24
+        && data.notes is string
+        && data.timestamp is number
+        && data.week is number
+        && data.month is number
+        && data.month >= 1
+        && data.month <= 12
+        && data.year is number
+        && data.year >= 2020
+        && data.year <= 2030
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.createdBy is string;
+    }
+
+    // User preferences validation function
+    function isValidUserPreferences() {
+      let data = request.resource.data;
+      return data.userId is string
+        && data.preferences is map
+        && data.updatedAt is timestamp;
+    }
+
+    // Form drafts validation function
+    function isValidFormDraft() {
+      let data = request.resource.data;
+      return data.userId is string
+        && data.formType is string
+        && data.draftData is map
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // App state validation function
+    function isValidAppState() {
+      let data = request.resource.data;
+      return data.userId is string
+        && data.stateData is map
+        && data.updatedAt is timestamp;
+    }
+
+    // Backup validation function
+    function isValidBackup() {
+      let data = request.resource.data;
+      return data.userId is string
+        && data.backupData is map
+        && data.createdAt is timestamp
+        && data.backupType is string;
+    }
+
+    // User preferences collection
+    match /user_preferences/{userId} {
+      allow read, write: if isAuthenticated() 
+        && request.auth.uid == userId;
+      allow create: if isAuthenticated() 
+        && isValidUserPreferences()
+        && request.auth.uid == userId
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() 
+        && isValidUserPreferences()
+        && request.auth.uid == userId
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // Form drafts collection - more lenient for demo users
+    match /form_drafts/{draftId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // App state collection
+    match /app_state/{userId} {
+      allow read, write: if isAuthenticated() 
+        && request.auth.uid == userId;
+      allow create: if isAuthenticated() 
+        && isValidAppState()
+        && request.auth.uid == userId
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() 
+        && isValidAppState()
+        && request.auth.uid == userId
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // Backups collection
+    match /backups/{backupId} {
+      allow read, write: if isAuthenticated() 
+        && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() 
+        && isValidBackup()
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() 
+        && resource.data.userId == request.auth.uid;
+    }
+
+    match /consumption_reports/{reportId} {
+      // Allow all authenticated users to read consumption reports
+      allow read: if isAuthenticated();
+      
+      // Allow creating consumption reports with validation and ownership
+      allow create: if isAuthenticated() 
+        && isValidConsumptionReport()
+        && request.resource.data.createdBy == request.auth.uid;
+      
+      // Allow updating reports only by the original creator
+      allow update: if isAuthenticated() 
+        && isValidConsumptionReport()
+        && resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdBy == resource.data.createdBy;
+      
+      // Allow deleting reports only by the original creator
+      allow delete: if isAuthenticated() 
+        && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Fridge Placements
+    function isValidFridgePlacement() {
+      let data = request.resource.data;
+      return data.warehouseId is string
+        && data.name is string
+        && data.zone is string
+        && data.temperature is number
+        && data.humidity is number
+        && data.capacity is number
+        && data.currentOccupancy is number
+        && data.status is string
+        && (data.status in ['active', 'maintenance', 'inactive'])
+        && (data.lastMaintenanceDate is timestamp || !('lastMaintenanceDate' in data))
+        && (data.notes is string || !('notes' in data))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /fridgePlacements/{placementId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidFridgePlacement();
+      allow update: if isAuthenticated() && isValidFridgePlacement();
+      allow delete: if isAuthenticated();
+    }
+
+    // Default deny
+    // Suivis Déchet collection rules (for client-side Suivi Déchet archives)
+    // Documents are simple archives with a header (map) and rows (list of maps).
+    match /suivis_dechet/{docId} {
+      function isValidHeader(h) {
+        return h is map
+          && ( ("lotNumber" in h && h.lotNumber is string) || !("lotNumber" in h) )
+          && ( ("date" in h && h.date is string) || !("date" in h) )
+          && ( ("notes" in h && h.notes is string) || !("notes" in h) );
+      }
+
+      function isValidRow(r) {
+        return r is map
+          && ( ("paletteNumber" in r && (r.paletteNumber is string || r.paletteNumber == null)) || !("paletteNumber" in r) )
+          && ( ("nature" in r && r.nature is string) || !("nature" in r) )
+          && ( ("variete" in r && r.variete is string) || !("variete" in r) )
+          && ( ("quantity" in r && (r.quantity is number || r.quantity is string)) || !("quantity" in r) );
+      }
+
+      function isValidDocument() {
+        let d = request.resource.data;
+        return d.header is map
+          && d.rows is list
+          && d.rows.size() <= 200 // reasonable cap to avoid huge documents
+          && d.rows.size() >= 0
+          && isValidHeader(d.header);
+      }
+
+      // Allow authenticated reads (archives visible to authenticated users)
+      allow read: if request.auth != null;
+
+      // Create only if authenticated, valid shape and createdBy == auth.uid
+      allow create: if request.auth != null
+        && isValidDocument()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      // Update: only owner or admin can update and must preserve/validate shape
+      allow update: if request.auth != null
+        && (resource.data.createdBy == request.auth.uid ||
+            exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        && isValidDocument();
+
+      // Delete only by owner or admin
+      allow delete: if request.auth != null
+        && (resource.data.createdBy == request.auth.uid ||
+            exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isDevelopmentServer() {
+      return request.origin.matches('http://localhost:[0-9]+');
+    }
+
+    // User files
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Invoices uploaded by user (archive uploads)
+    match /invoices/{userId}/{boxId}/{fileName} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Factures: allow any authenticated user to read and write
+    match /factures/{allBoxIds}/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Quality Control images
+    match /quality_control/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Expedition reports and PDFs
+    match /reports/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Expedition PDFs
+    match /expedition_pdfs/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Consumption Reports PDFs and attachments
+    match /consumption_reports/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /documents/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isOwner(userId) && isDevelopmentServer();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

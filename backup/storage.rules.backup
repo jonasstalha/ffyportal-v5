@@ -1,0 +1,274 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for Quality Control System
+// Customized for fruits_foru_systeme quality control operations
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user has quality control permissions
+    function isQualityControlUser() {
+      return isAuthenticated() && 
+             request.auth.token.email != null &&
+             request.auth.token.email_verified == true;
+    }
+    
+    // Helper function to check if user has admin role
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.role == 'admin';
+    }
+    
+    // Helper function to check if user has controller or higher role
+    function isControllerOrHigher() {
+      return isAuthenticated() && 
+             request.auth.token.role in ['controller', 'chief', 'quality_manager', 'admin'];
+    }
+    
+    // Helper function to check if user has chief or higher role
+    function isChiefOrHigher() {
+      return isAuthenticated() && 
+             request.auth.token.role in ['chief', 'quality_manager', 'admin'];
+    }
+    
+    // Helper function to check if user has quality manager or admin role
+    function isQualityManagerOrAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.role in ['quality_manager', 'admin'];
+    }
+    
+    // Helper function to validate image file types
+    function isValidImageType() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+    
+    // Helper function to validate PDF file types
+    function isValidPDFType() {
+      return request.resource.contentType == 'application/pdf';
+    }
+    
+    // Helper function to validate file sizes
+    function isValidImageSize() {
+      return request.resource.size <= 10 * 1024 * 1024; // 10MB limit for images
+    }
+    
+    function isValidPDFSize() {
+      return request.resource.size <= 20 * 1024 * 1024; // 20MB limit for PDFs
+    }
+    
+    // Helper function to check if user can access lot data
+    function canAccessLot() {
+      return isQualityControlUser();
+    }
+
+    // MAIN QUALITY CONTROL STORAGE
+    // Global quality control access with comprehensive validation
+    match /quality_control/{folder=**} {
+      // Read access for all authenticated quality control users
+      allow read: if isQualityControlUser();
+      
+      // Write access with file type and size validation
+      allow write: if isQualityControlUser() &&
+                     (isValidImageType() || isValidPDFType()) &&
+                     (isValidImageSize() || isValidPDFSize());
+    }
+
+    // SPECIFIC LOT IMAGES
+    // Path: quality_control/lots/{lotId}/images/{imageId}
+    match /quality_control/lots/{lotId}/images/{imageId} {
+      allow read: if isQualityControlUser();
+      
+      allow write: if isQualityControlUser() &&
+                      canAccessLot() &&
+                      isValidImageType() &&
+                      isValidImageSize() &&
+                      // Validate image naming convention
+                      imageId.matches('.*\\.(jpg|jpeg|png|webp)');
+      
+      allow delete: if isQualityControlUser() &&
+                       canAccessLot() &&
+                       (isQualityManagerOrAdmin() || 
+                        request.auth.uid == resource.metadata.uploadedBy);
+    }
+
+    // CALIBRE IMAGES FOR RAPPORT QUALITY
+    // Path: quality_control/calibres/{lotId}/{calibre}/{imageId}
+    match /quality_control/calibres/{lotId}/{calibre}/{imageId} {
+      allow read: if isQualityControlUser();
+      
+      allow write: if isQualityControlUser() &&
+                      canAccessLot() &&
+                      isValidImageType() &&
+                      isValidImageSize() &&
+                      // Validate calibre format (numeric values)
+                      calibre.matches('[0-9]+') &&
+                      // Validate image naming
+                      imageId.matches('.*\\.(jpg|jpeg|png|webp)');
+      
+      allow delete: if isQualityControlUser() &&
+                       canAccessLot() &&
+                       isChiefOrHigher();
+    }
+
+    // TEST RESULT IMAGES
+    // Path: quality_control/tests/{lotId}/{calibre}/{testType}_{imageId}
+    match /quality_control/tests/{lotId}/{calibre}/{imageId} {
+      allow read: if isQualityControlUser();
+      
+      allow write: if isQualityControlUser() &&
+                      canAccessLot() &&
+                      isValidImageType() &&
+                      isValidImageSize() &&
+                      calibre.matches('[0-9]+') &&
+                      // Validate test image naming (poids, firmness, puree)
+                      imageId.matches('(poids|firmness|puree|test)_.*\\.(jpg|jpeg|png|webp)');
+      
+      allow delete: if isQualityControlUser() &&
+                       canAccessLot() &&
+                       isChiefOrHigher();
+    }
+
+    // PDF REPORTS STORAGE
+    // Path: quality_control/reports/{lotId}/{reportId}
+    match /quality_control/reports/{lotId}/{reportId} {
+      allow read: if isQualityControlUser();
+      
+      allow write: if isQualityControlUser() &&
+                      canAccessLot() &&
+                      isValidPDFType() &&
+                      isValidPDFSize() &&
+                      // Validate PDF report naming
+                      reportId.matches('(rapport|rapport_visuel)_.*\\.pdf');
+      
+      // Only allow deletion by admins and quality managers
+      allow delete: if isQualityControlUser() &&
+                       isQualityManagerOrAdmin();
+    }
+
+    // ARCHIVE STORAGE (Long-term retention)
+    // Path: quality_control/archive/{year}/{month}/{lotId}/{allPaths}
+    match /quality_control/archive/{year}/{month}/{lotId}/{allPaths=**} {
+      // Read access for quality control users
+      allow read: if isQualityControlUser();
+      
+      // Write access for archival operations (limited time window after creation)
+      allow write: if isQualityControlUser() &&
+                      isChiefOrHigher() &&
+                      year.matches('[0-9]{4}') &&
+                      month.matches('(0[1-9]|1[0-2])') &&
+                      (isValidImageType() || isValidPDFType()) &&
+                      (isValidImageSize() || isValidPDFSize());
+      
+      // Archive deletion only for admins (with time restriction)
+      allow delete: if isAuthenticated() &&
+                       isAdmin() &&
+                       request.time < resource.timeCreated + duration.value(30, "d");
+    }
+
+    // BACKUP STORAGE (Admin and system only)
+    // Path: quality_control/backups/{backupId}/{allPaths}
+    match /quality_control/backups/{backupId}/{allPaths=**} {
+      // Read/write only for admins and system operations
+      allow read, write: if isAuthenticated() &&
+                            request.auth.token.role in ['admin', 'system'];
+      
+      // Strict deletion policy for backups
+      allow delete: if isAuthenticated() &&
+                       isAdmin() &&
+                       request.time < resource.timeCreated + duration.value(90, "d");
+    }
+
+    // TEMPORARY UPLOADS (User-specific with TTL)
+    // Path: quality_control/temp/{userId}/{uploadId}
+    match /quality_control/temp/{userId}/{uploadId} {
+      // User can only access their own temp files
+      allow read, write: if isAuthenticated() &&
+                            request.auth.uid == userId &&
+                            (isValidImageType() || isValidPDFType()) &&
+                            (isValidImageSize() || isValidPDFSize());
+      
+      // Auto-cleanup: allow deletion by owner or system after 24 hours
+      allow delete: if isAuthenticated() && (
+                       (request.auth.uid == userId) ||
+                       (request.auth.token.role in ['admin', 'system']) ||
+                       (request.time > resource.timeCreated + duration.value(24, "h"))
+                     );
+    }
+
+    // USER PROFILE ASSETS
+    // Path: users/{userId}/profile/{fileName}
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isAuthenticated();
+      
+      allow write: if isAuthenticated() &&
+                      request.auth.uid == userId &&
+                      isValidImageType() &&
+                      request.resource.size <= 2 * 1024 * 1024; // 2MB for profiles
+      
+      allow delete: if isAuthenticated() &&
+                       (request.auth.uid == userId || isAdmin());
+    }
+
+    // TEST UPLOADS (for debugging)
+    // Path: test-uploads/{filename}
+    match /test-uploads/{filename} {
+      allow read, write, delete: if isAuthenticated();
+    }
+
+    // DEFAULT DENY RULE
+    // Deny access to any other paths not explicitly defined above
+    match /{allPaths=**} {
+      allow read, write: if false; // Explicit denial for security
+    }
+  }
+}
+
+// DEPLOYMENT AND USAGE NOTES:
+//
+// 1. ROLE SETUP: Ensure users have proper roles in Firebase Auth custom claims:
+//    - controller: Can upload/manage basic quality control data
+//    - chief: Can approve/reject and manage all quality control operations
+//    - quality_manager: Full access to quality control system
+//    - admin: Full system access including backups and archives
+//    - system: For automated operations and services
+//
+// 2. CUSTOM CLAIMS SETUP (using Admin SDK):
+//    admin.auth().setCustomUserClaims(uid, {
+//      role: "controller" | "chief" | "quality_manager" | "admin" | "system",
+//      email_verified: true
+//    });
+//
+// 3. DEPLOYMENT COMMANDS:
+//    firebase deploy --only storage                    # Deploy storage rules only
+//    firebase deploy --only firestore:rules,storage   # Deploy both rulesets
+//    firebase emulators:start --only storage          # Test storage rules locally (requires Java)
+//
+// 4. SECURITY FEATURES:
+//    - Role-based access control via Firebase Auth custom claims
+//    - File type validation (images: JPEG/PNG/WebP, documents: PDF)
+//    - Size limitations (images: 10MB, PDFs: 20MB, profiles: 2MB)
+//    - Path structure validation and naming conventions
+//    - Time-based restrictions for archives and temporary files
+//    - Ownership validation for user-specific operations
+//
+// 5. TROUBLESHOOTING:
+//    - If emulators fail with Java error, install OpenJDK 11+
+//    - Use --dry-run flag to test rule syntax without emulators
+//    - Check custom claims are properly set for users
+//    - Verify file naming conventions match regex patterns
+//
+// 6. MONITORING:
+//    - Monitor Firebase Storage usage and quota
+//    - Set up alerts for unusual access patterns
+//    - Regular audit of user roles and permissions
+//    - Implement logging for sensitive operations
+//
+// 7. MAINTENANCE:
+//    - Cleanup temporary files older than 24 hours (via Cloud Functions)
+//    - Archive old quality control data periodically
+//    - Review and update role assignments regularly
+//    - Monitor storage costs and implement cleanup policies

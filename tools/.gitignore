@@ -1,0 +1,8 @@
+# Ignore local service account
+serviceAccountKey.json
+
+# Node modules
+node_modules/
+
+# Generated PDFs
+*.pdf
