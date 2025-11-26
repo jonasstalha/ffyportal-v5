@@ -60,7 +60,8 @@ interface WorkSchedule {
   updatedAt?: Timestamp;
 }
 
-const Horaires: React.FC = () => {
+// CORRECTION: Changer le nom du composant pour qu'il commence par une majuscule
+const Schedules: React.FC = () => {
   // State management
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [schedules, setSchedules] = useState<WorkSchedule[]>([]);
@@ -1074,4 +1075,5 @@ const Horaires: React.FC = () => {
   );
 };
 
-export default Horaires;
+// CORRECTION: Exporter avec le nom correct
+export default Schedules;

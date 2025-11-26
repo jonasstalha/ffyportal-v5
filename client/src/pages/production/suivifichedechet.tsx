@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { FilePlus, RefreshCw, Save } from 'lucide-react';
+import { FilePlus, RefreshCw, Save, Calculator, Download, Trash2, Archive } from 'lucide-react';
 import LOGO from '../../../assets/logo.png';
 
 const defaultForm = {
   header: {
     code: 'F.S.D',
-    dateCreation: '18/09/2023',
+    dateCreation: new Date().toLocaleDateString('fr-FR'),
     version: '00',
     dateTraitement: new Date().toLocaleDateString('fr-FR'),
     responsableTracabilite: '',
@@ -26,62 +26,191 @@ const defaultForm = {
   }))
 };
 
+// Constantes pour les calculs
+const POIDS_CAISSE = 2.8; // kg
+const TARE_PALETTE = 15; // kg (poids moyen d'une palette vide)
+
 const SuiviDechets: React.FC = () => {
   const [formData, setFormData] = useState<any>(defaultForm);
   const [archivedSuivis, setArchivedSuivis] = useState<any[]>([]);
+  const [totals, setTotals] = useState({
+    totalPoidsBrut: 0,
+    totalPoidsNet: 0,
+    totalNombreCaisses: 0,
+    totalPallets: 0
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
+  // Calculer les totaux automatiquement
   useEffect(() => {
-    const saved = localStorage.getItem('suivis_dechet_archives');
-    if (saved) {
-      try { setArchivedSuivis(JSON.parse(saved)); } catch { /* ignore */ }
-    }
+    const calculatedTotals = formData.rows.reduce((acc: any, row: any) => {
+      if (row.numeroPalette && row.numeroPalette.trim() !== '') {
+        acc.totalPallets++;
+      }
+      
+      const nbCaisses = parseFloat(row.nombreCaisses) || 0;
+      const poidsBrut = parseFloat(row.poidsBrut) || 0;
+      const poidsNet = parseFloat(row.poidsNet) || 0;
+      
+      acc.totalNombreCaisses += nbCaisses;
+      acc.totalPoidsBrut += poidsBrut;
+      acc.totalPoidsNet += poidsNet;
+      
+      return acc;
+    }, {
+      totalPoidsBrut: 0,
+      totalPoidsNet: 0,
+      totalNombreCaisses: 0,
+      totalPallets: 0
+    });
 
-    // Wait for auth state before attempting to load remote archives — only authenticated users can read them
+    setTotals(calculatedTotals);
+  }, [formData.rows]);
+
+  // Charger les données au démarrage
+  useEffect(() => {
+    const loadInitialData = async () => {
+      // Charger depuis le localStorage
+      const saved = localStorage.getItem('suivis_dechet_archives');
+      if (saved) {
+        try { 
+          setArchivedSuivis(JSON.parse(saved)); 
+        } catch { /* ignore */ }
+      }
+
+      // Charger le formulaire courant sauvegardé
+      const currentSaved = localStorage.getItem('suivi_dechet_current');
+      if (currentSaved) {
+        try {
+          setFormData(JSON.parse(currentSaved));
+        } catch { /* ignore */ }
+      }
+    };
+
+    loadInitialData();
+
+    // Écouter les changements d'authentification pour Firebase
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) return; // not signed in
+      setUser(user);
+      if (!user) return;
+      
       try {
+        setIsLoading(true);
         const col = collection(db, 'suivis_dechet');
-        const q = query(col, orderBy('createdAt', 'desc'));
+        const q = query(col, where('createdBy', '==', user.uid), orderBy('createdAt', 'desc'));
         const snap = await getDocs(q);
-        const remote = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        const remote = snap.docs.map(d => ({ 
+          id: d.id, 
+          ...(d.data() as any),
+          archivedAt: d.data().archivedAt?.toDate?.()?.toISOString() || 
+                     d.data().createdAt?.toDate?.()?.toISOString() || 
+                     new Date().toISOString()
+        }));
+        
         setArchivedSuivis(prev => {
           const ids = new Set(prev.map(a => a.id));
           const merged = [...prev, ...remote.filter(r => !ids.has(r.id))];
-          try { localStorage.setItem('suivis_dechet_archives', JSON.stringify(merged)); } catch {};
+          try { 
+            localStorage.setItem('suivis_dechet_archives', JSON.stringify(merged)); 
+          } catch {}
           return merged as any[];
         });
       } catch (e) {
         console.warn('Could not load remote archives', e);
+      } finally {
+        setIsLoading(false);
       }
     });
 
     return () => unsubscribe();
   }, []);
 
+  // Sauvegarder les archives dans localStorage quand elles changent
   useEffect(() => {
     localStorage.setItem('suivis_dechet_archives', JSON.stringify(archivedSuivis));
   }, [archivedSuivis]);
+
+  // Sauvegarder le formulaire courant
+  useEffect(() => {
+    localStorage.setItem('suivi_dechet_current', JSON.stringify(formData));
+  }, [formData]);
 
   const updateHeader = (field: string, value: any) => {
     setFormData((prev: any) => ({ ...prev, header: { ...prev.header, [field]: value } }));
   };
 
-  // Keep dependent fields empty when palette is empty; provide defaults when filled
+  // Fonction pour calculer automatiquement le poids net
+  const calculatePoidsNet = (nombreCaisses: string, poidsBrut: string): string => {
+    const nbCaisses = parseFloat(nombreCaisses) || 0;
+    const pBrut = parseFloat(poidsBrut) || 0;
+    
+    if (nbCaisses > 0 && pBrut > 0) {
+      const poidsNet = pBrut - (nbCaisses * POIDS_CAISSE + TARE_PALETTE);
+      return Math.max(0, poidsNet).toFixed(1);
+    }
+    return '';
+  };
+
+  // Fonction pour générer automatiquement le numéro de palette
+  const getAutoPaletteNumber = (currentIndex: number): string => {
+    const existingNumbers = formData.rows
+      .map((row: any) => {
+        const num = parseInt(row.numeroPalette);
+        return isNaN(num) ? 0 : num;
+      })
+      .filter(num => num > 0);
+    
+    const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+    return (maxNumber + 1).toString();
+  };
+
   const updateRow = (index: number, field: string, value: any) => {
     setFormData((prev: any) => {
       const rows = prev.rows.map((row: any, i: number) => {
         if (i !== index) return row;
         const updated = { ...row, [field]: value };
 
-        if (field === 'numeroPalette') {
-          const paletteEmpty = String(value).trim() === '';
-          if (paletteEmpty) {
-            updated.natureDechet = '';
-            updated.variete = '';
-          } else {
-            if (!updated.natureDechet) updated.natureDechet = 'D,MACHINE';
-            if (!updated.variete) updated.variete = 'HASS';
+        // Numéro de palette auto-incrémenté
+        if (field === 'numeroPalette' && value === '' && i > 0) {
+          const prevRow = prev.rows[i - 1];
+          if (prevRow.numeroPalette && prevRow.numeroPalette.trim() !== '') {
+            updated.numeroPalette = getAutoPaletteNumber(i);
           }
+        }
+
+        // Calcul automatique du poids net quand nombre de caisses ou poids brut change
+        if ((field === 'nombreCaisses' || field === 'poidsBrut') && updated.numeroPalette) {
+          const poidsNetCalcule = calculatePoidsNet(
+            field === 'nombreCaisses' ? value : updated.nombreCaisses,
+            field === 'poidsBrut' ? value : updated.poidsBrut
+          );
+          updated.poidsNet = poidsNetCalcule;
+        }
+
+        // Définir les valeurs par défaut quand une palette est saisie
+        if (field === 'numeroPalette' && value.trim() !== '') {
+          if (!updated.natureDechet) updated.natureDechet = 'D,MACHINE';
+          if (!updated.variete) updated.variete = 'HASS';
+          
+          // Auto-incrémentation du numéro de palette pour les lignes suivantes
+          if (i < prev.rows.length - 1) {
+            const nextRow = prev.rows[i + 1];
+            if (!nextRow.numeroPalette || nextRow.numeroPalette.trim() === '') {
+              setTimeout(() => {
+                updateRow(i + 1, 'numeroPalette', getAutoPaletteNumber(i + 1));
+              }, 100);
+            }
+          }
+        }
+
+        // Vider les champs dépendants si la palette est vidée
+        if (field === 'numeroPalette' && value.trim() === '') {
+          updated.natureDechet = '';
+          updated.variete = '';
+          updated.nombreCaisses = '';
+          updated.poidsBrut = '';
+          updated.poidsNet = '';
         }
 
         return updated;
@@ -90,89 +219,192 @@ const SuiviDechets: React.FC = () => {
     });
   };
 
-  const resetForm = () => setFormData(defaultForm);
+  // Fonction pour calculer automatiquement tous les poids nets
+  const calculateAllPoidsNets = () => {
+    setFormData((prev: any) => {
+      const rows = prev.rows.map((row: any) => {
+        if (!row.numeroPalette || row.numeroPalette.trim() === '') {
+          return row;
+        }
+        
+        const poidsNetCalcule = calculatePoidsNet(row.nombreCaisses, row.poidsBrut);
+        return {
+          ...row,
+          poidsNet: poidsNetCalcule
+        };
+      });
+      return { ...prev, rows };
+    });
+    alert('Tous les poids nets ont été calculés automatiquement');
+  };
+
+  const resetForm = () => {
+    if (window.confirm('Êtes-vous sûr de vouloir réinitialiser le formulaire ? Toutes les données non sauvegardées seront perdues.')) {
+      setFormData(defaultForm);
+      localStorage.removeItem('suivi_dechet_current');
+    }
+  };
 
   const archiveCurrent = async () => {
-    // create a temporary local archive for immediate UX
+    if (!formData.rows.some((row: any) => row.numeroPalette && row.numeroPalette.trim() !== '')) {
+      alert('Veuillez saisir au moins une palette avant d\'archiver.');
+      return;
+    }
+
     const temp = {
       id: `arch-${Date.now()}`,
       header: { ...formData.header },
-      rows: formData.rows.map((r: any) => ({ ...r })),
-      archivedAt: new Date().toISOString()
+      rows: formData.rows.filter((r: any) => r.numeroPalette && r.numeroPalette.trim() !== ''),
+      totals: { ...totals },
+      archivedAt: new Date().toISOString(),
+      source: 'local'
     };
+    
     setArchivedSuivis(prev => {
       const next = [temp, ...prev];
       try { localStorage.setItem('suivis_dechet_archives', JSON.stringify(next)); } catch {}
       return next;
     });
+    
     resetForm();
+    alert('Suivi archivé localement avec succès');
 
-    // attempt to persist to Firestore
-    try {
-      const payload = { header: temp.header, rows: temp.rows, archivedAt: serverTimestamp(), createdBy: auth?.currentUser?.uid || null, createdAt: serverTimestamp() };
-      const col = collection(db, 'suivis_dechet');
-      const docRef = await addDoc(col, payload as any);
-      // replace temporary id with Firestore id in local list
-      setArchivedSuivis(prev => {
-        const mapped = prev.map(a => (a.archivedAt === temp.archivedAt ? { ...a, id: docRef.id } : a));
-        try { localStorage.setItem('suivis_dechet_archives', JSON.stringify(mapped)); } catch {}
-        return mapped;
-      });
-    } catch (err) {
-      console.warn('Failed to save archive to Firebase', err);
+    // Sauvegarder dans Firebase si authentifié
+    if (auth.currentUser) {
+      try {
+        const payload = { 
+          header: temp.header, 
+          rows: temp.rows, 
+          totals: temp.totals,
+          archivedAt: serverTimestamp(), 
+          createdBy: auth.currentUser.uid, 
+          createdAt: serverTimestamp(),
+          source: 'firebase'
+        };
+        const col = collection(db, 'suivis_dechet');
+        const docRef = await addDoc(col, payload as any);
+        
+        // Remplacer l'ID temporaire par l'ID Firebase
+        setArchivedSuivis(prev => {
+          const mapped = prev.map(a => (a.archivedAt === temp.archivedAt ? { ...a, id: docRef.id, source: 'firebase' } : a));
+          try { localStorage.setItem('suivis_dechet_archives', JSON.stringify(mapped)); } catch {}
+          return mapped;
+        });
+        
+        alert('Suivi également sauvegardé sur Firebase');
+      } catch (err) {
+        console.warn('Failed to save archive to Firebase', err);
+        alert('Archivage local réussi, mais échec de la sauvegarde Firebase');
+      }
     }
   };
 
-  // Save current suivi to Firestore (also keep local archive)
   const saveToFirebase = async () => {
+    if (!auth.currentUser) {
+      alert('Veuillez vous connecter pour sauvegarder sur Firebase');
+      return;
+    }
+
+    if (!formData.rows.some((row: any) => row.numeroPalette && row.numeroPalette.trim() !== '')) {
+      alert('Veuillez saisir au moins une palette avant de sauvegarder.');
+      return;
+    }
+
     try {
+      setIsLoading(true);
       const payload = {
         header: formData.header,
-        rows: formData.rows,
-        createdAt: serverTimestamp()
+        rows: formData.rows.filter((r: any) => r.numeroPalette && r.numeroPalette.trim() !== ''),
+        totals: totals,
+        createdBy: auth.currentUser.uid,
+        createdAt: serverTimestamp(),
+        source: 'firebase'
       };
+      
       const col = collection(db, 'suivis_dechet');
       const docRef = await addDoc(col, payload as any);
-      // also add to local archives list with firebase id
-      const archived = { id: docRef.id, header: { ...formData.header }, rows: formData.rows.map((r: any) => ({ ...r })), archivedAt: new Date().toISOString() };
+      
+      const archived = { 
+        id: docRef.id, 
+        header: { ...formData.header }, 
+        rows: formData.rows.filter((r: any) => r.numeroPalette && r.numeroPalette.trim() !== ''), 
+        totals: { ...totals },
+        archivedAt: new Date().toISOString(),
+        source: 'firebase'
+      };
+      
       setArchivedSuivis(prev => [archived, ...prev]);
       resetForm();
-      alert('Suivi enregistré sur Firebase');
+      alert('Suivi enregistré sur Firebase avec succès');
     } catch (err) {
-      console.error('Firebase save failed, falling back to local storage', err);
+      console.error('Firebase save failed', err);
       alert('Enregistrement Firebase impossible — sauvegarde locale effectuée');
       archiveCurrent();
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Load archived suivis from Firestore and merge with local
   const syncArchivesFromFirebase = async () => {
+    if (!auth.currentUser) {
+      alert('Veuillez vous connecter pour synchroniser avec Firebase');
+      return;
+    }
+
     try {
+      setIsLoading(true);
       const col = collection(db, 'suivis_dechet');
-      const q = query(col, orderBy('createdAt', 'desc'));
+      const q = query(col, where('createdBy', '==', auth.currentUser.uid), orderBy('createdAt', 'desc'));
       const snapshot = await getDocs(q);
-      const remote = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      // merge with local archived (local first)
-      const merged = [...archivedSuivis, ...remote];
-      setArchivedSuivis(merged as any[]);
-      alert('Archives synchronisées depuis Firebase');
+      const remote = snapshot.docs.map(d => ({ 
+        id: d.id, 
+        ...d.data(),
+        archivedAt: d.data().archivedAt?.toDate?.()?.toISOString() || 
+                   d.data().createdAt?.toDate?.()?.toISOString() || 
+                   new Date().toISOString(),
+        source: 'firebase'
+      }));
+      
+      setArchivedSuivis(remote as any[]);
+      alert(`${remote.length} archives synchronisées depuis Firebase avec succès`);
     } catch (err) {
       console.error('Sync from Firebase failed', err);
       alert('Impossible de synchroniser depuis Firebase');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const restoreArchive = async (id: string) => {
     const item = archivedSuivis.find(a => a.id === id);
     if (!item) return;
-    setFormData({ header: item.header, rows: item.rows });
-    // remove from local list
+    
+    // Reconstituer le formulaire avec 20 lignes
+    const restoredRows = [...item.rows];
+    while (restoredRows.length < 20) {
+      restoredRows.push({
+        numeroPalette: '',
+        nombreCaisses: '',
+        poidsBrut: '',
+        poidsNet: '',
+        natureDechet: '',
+        variete: ''
+      });
+    }
+    
+    setFormData({ 
+      header: { ...item.header }, 
+      rows: restoredRows 
+    });
+    
+    // Supprimer de la liste locale
     setArchivedSuivis(prev => {
       const next = prev.filter(a => a.id !== id);
       try { localStorage.setItem('suivis_dechet_archives', JSON.stringify(next)); } catch {}
       return next;
     });
-    // if this was saved in Firestore, optionally delete remote doc to avoid duplicate restores
+    
+    // Si c'est un document Firebase, le supprimer aussi
     if (id && !id.startsWith('arch-')) {
       try {
         await deleteDoc(doc(db, 'suivis_dechet', id));
@@ -180,11 +412,14 @@ const SuiviDechets: React.FC = () => {
         console.warn('Failed to delete remote archive after restore', e);
       }
     }
+    
+    alert('Suivi restauré avec succès');
   };
 
   const deleteArchive = async (id: string) => {
     if (!window.confirm('Supprimer définitivement cet archivage ?')) return;
-    // if remote, delete from Firestore
+    
+    // Si c'est un document Firebase, le supprimer de Firebase
     if (id && !id.startsWith('arch-')) {
       try {
         await deleteDoc(doc(db, 'suivis_dechet', id));
@@ -194,389 +429,259 @@ const SuiviDechets: React.FC = () => {
         return;
       }
     }
+    
+    // Supprimer de la liste locale
     setArchivedSuivis(prev => {
       const next = prev.filter(a => a.id !== id);
       try { localStorage.setItem('suivis_dechet_archives', JSON.stringify(next)); } catch {}
       return next;
     });
+    
+    alert('Archive supprimée avec succès');
   };
 
-const generatePDF = async () => {
+  // Fonction generatePDF professionnelle et industrielle
+  const generatePDF = async () => {
+    if (!formData.rows.some((row: any) => row.numeroPalette && row.numeroPalette.trim() !== '')) {
+      alert('Veuillez saisir au moins une palette avant de générer le PDF.');
+      return;
+    }
+
     try {
+      // Charger jsPDF dynamiquement
       const jsPDFModule = await import('jspdf');
-      // support different exports
-      // @ts-ignore
-      const jsPDF = jsPDFModule.jsPDF || jsPDFModule.default || jsPDFModule;
-
-      const imageToDataUrl = (src: string): Promise<string> => {
-        return new Promise((resolve, reject) => {
-          if (!src) return reject(new Error('No image source'));
-          const img = new Image();
-          img.crossOrigin = 'Anonymous';
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.width;
-              canvas.height = img.height;
-              const ctx = canvas.getContext('2d');
-              if (!ctx) return reject(new Error('Canvas context unavailable'));
-              ctx.drawImage(img, 0, 0);
-              resolve(canvas.toDataURL('image/png'));
-            } catch (e) {
-              reject(e);
-            }
-          };
-          img.onerror = () => reject(new Error('Failed loading image'));
-          img.src = src;
-        });
-      };
-
-      // A4 portrait configuration
-      const doc = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 10;
-      const usableWidth = pageWidth - margin * 2;
-      let cursorY = 5;
+      const jsPDF = (jsPDFModule as any).default || jsPDFModule;
+      const autoTableModule = await import('jspdf-autotable');
+      const autoTable = (autoTableModule as any).default || autoTableModule;
       
-      const lightGreen: [number, number, number] = [198, 224, 180];
-      const mediumGreen: [number, number, number] = [139, 195, 74];
-      const darkGreen: [number, number, number] = [56, 142, 60];
-      const gray: [number, number, number] = [75, 75, 75];
-      const lightGray: [number, number, number] = [245, 245, 245];
+      // Configuration du document
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 15;
+      let cursorY = margin;
 
-      // Header drawing function
-      const drawHeader = async (page: number) => {
-        // Professional header background with gradient effect (simulated with rectangles)
-        doc.setFillColor(darkGreen[0], darkGreen[1], darkGreen[2]);
-        doc.rect(0, 0, pageWidth, 32, 'F');
+      // Couleurs industrielles
+      const primaryColor = [0, 91, 150]; // Bleu industriel
+      const secondaryColor = [200, 16, 46]; // Rouge d'alerte
+      const accentColor = [241, 241, 241]; // Gris clair
+      const darkColor = [51, 51, 51]; // Gris foncé
+
+      // Fonction pour dessiner l'en-tête avec logo
+      const drawHeader = () => {
+        // Fond de l'en-tête
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(0, 0, pageWidth, 35, 'F');
         
-        // Add subtle accent line at top
-        doc.setDrawColor(mediumGreen[0], mediumGreen[1], mediumGreen[2]);
-        doc.setLineWidth(1.5);
-        doc.line(0, 0, pageWidth, 0);
-
-        // Add logo with white border for contrast
+        // Logo
         try {
-          const logoData = await imageToDataUrl(LOGO as unknown as string);
-          // White background circle behind logo
-          doc.setFillColor(255, 255, 255);
-          doc.circle(margin + 10, cursorY + 10, 11, 'F');
-          doc.addImage(logoData, 'PNG', margin + 2, cursorY + 2, 16, 16);
+          const img = new Image();
+          img.src = LOGO;
+          doc.addImage(img, 'PNG', margin, 8, 20, 20);
         } catch (e) {
-          // ignore
+          console.warn('Logo not available for PDF');
         }
-
-        // Title with shadow effect
+        
+        // Titre principal
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(18);
         doc.setTextColor(255, 255, 255);
-        doc.text('FICHE SUIVI DÉCHETS', pageWidth / 2, cursorY + 13, { align: 'center' });
-
-        // Version info box with rounded corners and shadow
-        const versionX = pageWidth - 48;
-        const versionY = cursorY + 3;
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(versionX, versionY, 38, 22, 2, 2, 'F');
-        doc.setDrawColor(lightGreen[0], lightGreen[1], lightGreen[2]);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(versionX, versionY, 38, 22, 2, 2, 'S');
+        doc.text('FICHE SUIVI DÉCHETS INDUSTRIELS', pageWidth / 2, 20, { align: 'center' });
         
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(darkGreen[0], darkGreen[1], darkGreen[2]);
-        doc.text('MP ENR 06', versionX + 19, versionY + 5, { align: 'center' });
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(gray[0], gray[1], gray[2]);
-        doc.text('Version : 01', versionX + 19, versionY + 11, { align: 'center' });
-        doc.text('Date : 01/07/2023', versionX + 19, versionY + 17, { align: 'center' });
-
-        cursorY += 37;
-        
-        // Metadata section with enhanced styling
-        const h = formData?.header || {};
-        const startY = cursorY;
+        // Informations du document
         doc.setFontSize(9);
-        
-        // First row with rounded corners and shadows
-        const boxHeight = 14;
-        const boxSpacing = 1;
-        
-        // Code box
-        doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
-        doc.roundedRect(margin, startY, 45, boxHeight, 1.5, 1.5, 'F');
-        doc.setDrawColor(220, 220, 220);
-        doc.setLineWidth(0.3);
-        doc.roundedRect(margin, startY, 45, boxHeight, 1.5, 1.5, 'S');
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(darkGreen[0], darkGreen[1], darkGreen[2]);
-        doc.text('Code', margin + 2, startY + 5);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        doc.setTextColor(gray[0], gray[1], gray[2]);
-        doc.text(h.code || '—', margin + 2, startY + 10.5);
-        
-        // Date création box
-        doc.setFontSize(9);
-        doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
-        doc.roundedRect(margin + 45 + boxSpacing, startY, 47, boxHeight, 1.5, 1.5, 'F');
-        doc.setDrawColor(220, 220, 220);
-        doc.roundedRect(margin + 45 + boxSpacing, startY, 47, boxHeight, 1.5, 1.5, 'S');
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(darkGreen[0], darkGreen[1], darkGreen[2]);
-        doc.text('Date création', margin + 47 + boxSpacing, startY + 5);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        doc.setTextColor(gray[0], gray[1], gray[2]);
-        doc.text(h.dateCreation || '—', margin + 47 + boxSpacing, startY + 10.5);
-        
-        // Date traitement box
-        doc.setFontSize(9);
-        doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
-        doc.roundedRect(margin + 93 + boxSpacing * 2, startY, 49, boxHeight, 1.5, 1.5, 'F');
-        doc.setDrawColor(220, 220, 220);
-        doc.roundedRect(margin + 93 + boxSpacing * 2, startY, 49, boxHeight, 1.5, 1.5, 'S');
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(darkGreen[0], darkGreen[1], darkGreen[2]);
-        doc.text('Date traitement', margin + 95 + boxSpacing * 2, startY + 5);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        doc.setTextColor(gray[0], gray[1], gray[2]);
-        doc.text(h.dateTraitement || '—', margin + 95 + boxSpacing * 2, startY + 10.5);
-        
-        // Responsable box
-        doc.setFontSize(9);
-        doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
-        doc.roundedRect(margin + 143 + boxSpacing * 3, startY, 47, boxHeight, 1.5, 1.5, 'F');
-        doc.setDrawColor(220, 220, 220);
-        doc.roundedRect(margin + 143 + boxSpacing * 3, startY, 47, boxHeight, 1.5, 1.5, 'S');
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(darkGreen[0], darkGreen[1], darkGreen[2]);
-        doc.text('Responsable', margin + 145 + boxSpacing * 3, startY + 5);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        doc.setTextColor(gray[0], gray[1], gray[2]);
-        const respText = h.responsableTracabilite || '—';
-        const respLines = doc.splitTextToSize(respText, 43);
-        doc.text(respLines[0], margin + 145 + boxSpacing * 3, startY + 10.5);
-
-        cursorY = startY + boxHeight + 8;
-        
-        // Decorative separator with dots
-        doc.setDrawColor(mediumGreen[0], mediumGreen[1], mediumGreen[2]);
-        doc.setLineWidth(1);
-        doc.line(margin, cursorY, pageWidth - margin, cursorY);
-        
-        cursorY += 6;
-      };
-
-      // Table configuration
-      const colPerc = [0.14, 0.14, 0.14, 0.14, 0.34, 0.1];
-      const colWidths = colPerc.map(p => Math.round(usableWidth * p));
-      const totalCols = colWidths.reduce((s, v) => s + v, 0);
-      if (totalCols < usableWidth) colWidths[colWidths.length - 1] += (usableWidth - totalCols);
-
-      const headers = ['N° palette', 'Nombre caisses', 'Poids Brut', 'Poids Net', 'Nature de déchet', 'Variété'];
-
-      const drawTableHeader = () => {
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'bold');
         doc.setTextColor(255, 255, 255);
-        let x = margin;
-        const h = 10;
+        doc.text(`Code: ${formData.header.code}`, margin + 25, 30);
+        doc.text(`Version: ${formData.header.version}`, pageWidth - margin, 30, { align: 'right' });
         
-        // Enhanced header with gradient-like effect
-        for (let i = 0; i < headers.length; i++) {
-          // Darker green background
-          doc.setFillColor(darkGreen[0], darkGreen[1], darkGreen[2]);
-          doc.rect(x, cursorY, colWidths[i], h, 'F');
-          
-          // Add subtle border
-          doc.setDrawColor(mediumGreen[0], mediumGreen[1], mediumGreen[2]);
-          doc.setLineWidth(0.3);
-          doc.rect(x, cursorY, colWidths[i], h, 'S');
-          
-          // Center-aligned white text
-          const textWidth = doc.getTextWidth(headers[i]);
-          const centerX = x + (colWidths[i] / 2) - (textWidth / 2);
-          doc.text(headers[i], centerX, cursorY + 6.5);
-          x += colWidths[i];
-        }
-        
-        cursorY += h;
+        cursorY = 45;
       };
 
-      // Start first page
-      await drawHeader(1);
-      drawTableHeader();
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-
-      const rows = Array.isArray(formData?.rows) ? formData.rows : [];
-      const topUsed = cursorY;
-      const bottomMargin = 20;
-      const availableHeight = pageHeight - bottomMargin - topUsed;
-      const estimatedRowHeight = 8;
-      const maxRows = Math.max(1, Math.floor(availableHeight / estimatedRowHeight));
-
-      let printed = 0;
-      for (let i = 0; i < rows.length && printed < maxRows; i++) {
-        const row = rows[i] || {};
-        const cells = [row.numeroPalette || '', row.nombreCaisses || '', row.poidsBrut || '', row.poidsNet || '', row.natureDechet || '', row.variete || ''];
-
-        // Compute row height
-        let maxLines = 1;
-        for (let c = 0; c < cells.length; c++) {
-          const w = colWidths[c] - 4;
-          const txt = String(cells[c]);
-          const lines = doc.splitTextToSize(txt, w);
-          if (lines.length > maxLines) maxLines = lines.length;
-        }
-        const lineHeight = 4.5;
-        const thisRowHeight = Math.max(8, Math.ceil(maxLines) * lineHeight + 2);
-
-        // Page break if needed
-        if (cursorY + thisRowHeight + 20 > pageHeight) {
-          const cur = doc.getNumberOfPages();
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(gray[0], gray[1], gray[2]);
-          doc.text(`Page ${cur}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-          doc.addPage();
-          cursorY = 5;
-          await drawHeader(doc.getNumberOfPages());
-          drawTableHeader();
-        }
-
-        // Draw row with enhanced styling
-        let x = margin;
-        doc.setTextColor(gray[0], gray[1], gray[2]);
+      // Fonction pour dessiner les informations principales
+      const drawMainInfo = () => {
+        // Cadre principal
+        doc.setDrawColor(200, 200, 200);
+        doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+        doc.roundedRect(margin, cursorY, pageWidth - 2 * margin, 30, 3, 3, 'F');
         
-        // Alternating row colors with very subtle difference
-        const isEven = i % 2 === 0;
-        const rowColor: [number, number, number] = isEven ? [255, 255, 255] : [248, 250, 252];
-        
-        for (let c = 0; c < colWidths.length; c++) {
-          const w = colWidths[c];
-          doc.setFillColor(rowColor[0], rowColor[1], rowColor[2]);
-          doc.rect(x, cursorY, w, thisRowHeight, 'F');
-          
-          // Cell borders
-          doc.setDrawColor(230, 230, 230);
-          doc.setLineWidth(0.2);
-          doc.rect(x, cursorY, w, thisRowHeight, 'S');
-          x += w;
-        }
-
-        // Write cell text with better alignment
-        doc.setFontSize(8.5);
-        doc.setFont('helvetica', 'normal');
-        x = margin;
-        for (let c = 0; c < cells.length; c++) {
-          const w = colWidths[c] - 4;
-          const lines = doc.splitTextToSize(String(cells[c]), w);
-          
-          // Center align numeric columns (0-3)
-          if (c <= 3 && cells[c]) {
-            const textWidth = doc.getTextWidth(String(cells[c]));
-            const centerX = x + 2 + (w / 2) - (textWidth / 2);
-            doc.text(lines, centerX, cursorY + 5);
-          } else {
-            doc.text(lines, x + 2, cursorY + 5);
-          }
-          x += colWidths[c];
-        }
-
-        cursorY += thisRowHeight;
-        printed += 1;
-      }
-
-      // Overflow indicator with icon
-      if (rows.length > printed) {
-        const remaining = rows.length - printed;
-        cursorY += 4;
-        
-        // Alert box for overflow
-        doc.setFillColor(255, 243, 205);
-        doc.roundedRect(margin, cursorY, usableWidth, 10, 1, 1, 'F');
-        doc.setDrawColor(255, 193, 7);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(margin, cursorY, usableWidth, 10, 1, 1, 'S');
-        
-        doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(180, 83, 9);
-        doc.text(`⚠ Attention: ${remaining} ligne(s) supplémentaire(s) non affichée(s)`, margin + 3, cursorY + 6.5);
-      }
+        doc.setFontSize(11);
+        doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+        
+        // Ligne 1
+        doc.text(`Date de création: ${formData.header.dateCreation}`, margin + 5, cursorY + 8);
+        doc.text(`Date de traitement: ${formData.header.dateTraitement}`, pageWidth / 2, cursorY + 8);
+        
+        // Ligne 2
+        doc.text(`Responsable: ${formData.header.responsableTracabilite || 'Non spécifié'}`, margin + 5, cursorY + 16);
+        
+        // Ligne 3
+        doc.text(`Produit: ${formData.header.produit}`, margin + 5, cursorY + 24);
+        
+        const typeText = [];
+        if (formData.header.conventionnel) typeText.push('CONVENTIONNEL');
+        if (formData.header.biologique) typeText.push('BIOLOGIQUE');
+        
+        doc.text(`Type: ${typeText.join(' / ')}`, pageWidth / 2, cursorY + 24);
+        
+        cursorY += 40;
+      };
 
-      // Enhanced footer with page number and date
-      const totalPages = doc.getNumberOfPages();
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(120, 120, 120);
-      
-      // Left: Date
-      const today = new Date().toLocaleDateString('fr-FR');
-      doc.text(`Généré le ${today}`, margin, pageHeight - 8);
-      
-      // Center: Page number
-      doc.text(`Page ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
-      
-      // Right: Document reference
-      doc.text('Fiche Suivi Déchets', pageWidth - margin, pageHeight - 8, { align: 'right' });
+      // Fonction pour dessiner les totaux
+      const drawTotals = () => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text('RÉCAPITULATIF DES TOTAUX:', margin, cursorY);
+        cursorY += 8;
+        
+        const totalsData = [
+          { label: 'Nombre de palettes', value: totals.totalPallets, unit: '' },
+          { label: 'Total nombre de caisses', value: totals.totalNombreCaisses, unit: '' },
+          { label: 'Total poids brut', value: totals.totalPoidsBrut.toFixed(1), unit: 'kg' },
+          { label: 'Total poids net', value: totals.totalPoidsNet.toFixed(1), unit: 'kg' }
+        ];
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+        
+        totalsData.forEach(item => {
+          doc.text(`${item.label}: ${item.value} ${item.unit}`, margin + 5, cursorY);
+          cursorY += 5;
+        });
+        
+        cursorY += 10;
+      };
 
-      const fileName = `Fiche_Suivi_Dechets_${new Date().toISOString().split('T')[0]}.pdf`;
+      // Fonction pour dessiner le tableau avec autoTable
+      const drawTable = () => {
+        const headers = [
+          'N° Palette', 
+          'Nb Caisses', 
+          'Poids Brut (kg)', 
+          'Poids Net (kg)', 
+          'Nature Déchet', 
+          'Variété'
+        ];
+        
+        const rows = formData.rows
+          .filter((row: any) => row.numeroPalette && row.numeroPalette.trim() !== '')
+          .map((row: any) => [
+            row.numeroPalette,
+            row.nombreCaisses || '0',
+            row.poidsBrut ? `${parseFloat(row.poidsBrut).toFixed(1)}` : '0.0',
+            row.poidsNet ? `${parseFloat(row.poidsNet).toFixed(1)}` : '0.0',
+            row.natureDechet || '-',
+            row.variete || '-'
+          ]);
+        
+        if (rows.length === 0) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+          doc.text('Aucune donnée de palette à afficher', margin, cursorY);
+          cursorY += 10;
+          return;
+        }
+
+        autoTable(doc, {
+          startY: cursorY,
+          head: [headers],
+          body: rows,
+          theme: 'grid',
+          styles: {
+            fontSize: 8,
+            cellPadding: 2,
+            lineColor: [100, 100, 100],
+            lineWidth: 0.1,
+          },
+          headStyles: {
+            fillColor: [primaryColor[0], primaryColor[1], primaryColor[2]],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 9,
+          },
+          alternateRowStyles: {
+            fillColor: [245, 245, 245],
+          },
+          margin: { left: margin, right: margin },
+        });
+        
+        cursorY = (doc as any).lastAutoTable.finalY + 10;
+      };
+
+      // Fonction pour dessiner le pied de page
+      const drawFooter = () => {
+        const footerY = doc.internal.pageSize.getHeight() - 15;
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        
+        // Ligne de séparation
+        doc.setDrawColor(200, 200, 200);
+        doc.line(margin, footerY - 8, pageWidth - margin, footerY - 8);
+        
+        doc.text(`Document généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, margin, footerY - 2);
+        doc.text('Système de Traçabilité Industrielle - Fiche Suivi Déchets', pageWidth / 2, footerY - 2, { align: 'center' });
+        doc.text(`Page 1/1`, pageWidth - margin, footerY - 2, { align: 'right' });
+      };
+
+      // Génération du PDF
+      drawHeader();
+      drawMainInfo();
+      drawTotals();
+      drawTable();
+      drawFooter();
+
+      // Sauvegarder le PDF
+      const fileName = `Fiche_Suivi_Dechets_${formData.header.produit}_${formData.header.dateTraitement.replace(/\//g, '-')}.pdf`;
       doc.save(fileName);
+      
     } catch (err) {
       console.error('PDF generation failed', err);
-      alert('Erreur lors de la génération du PDF');
+      alert('Erreur lors de la génération du PDF. Vérifiez que toutes les données sont valides.');
     }
-  };
-  const saveData = () => {
-    // Save locally as quick persistence; integrate with Firebase save if needed
-    localStorage.setItem('suivi_dechet_current', JSON.stringify(formData));
-    alert('Données sauvegardées localement');
   };
 
   return (
     <div className="bg-gradient-to-b from-green-50 to-white min-h-screen p-4 md:p-6">
       <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-xl">
         <div className="p-6">
-          {/* Header with logo section, title and document info */}
-          <div className="flex mb-6 items-center">
-            {/* Company logo */}
-            <div className="w-24 h-16 bg-green-100 border-2 border-green-300 rounded-lg flex items-center justify-center mr-4">
-              <img src={LOGO} alt="Logo" className="h-12 w-auto object-contain" />
+          {/* En-tête avec logo et informations */}
+          <div className="flex flex-col md:flex-row mb-6 items-center gap-4">
+            {/* Logo */}
+            <div className="w-20 h-16 bg-green-100 border-2 border-green-300 rounded-lg flex items-center justify-center">
+              <img src={LOGO} alt="Logo" className="h-10 w-auto object-contain" />
             </div>
 
-            {/* Main title */}
-            <div className="flex-1 bg-green-600 text-white flex items-center justify-center rounded-lg mr-4">
-              <h2 className="text-xl font-bold">Fiche Suivi Déchets</h2>
+            {/* Titre principal */}
+            <div className="flex-1 bg-green-600 text-white flex items-center justify-center rounded-lg py-3">
+              <h2 className="text-xl font-bold text-center">Fiche Suivi Déchets Industriels</h2>
             </div>
 
-            {/* Document info */}
-            <div className="w-48 bg-gray-50 border-2 border-gray-300 rounded-lg p-2">
-              <div className="text-sm mb-1">
-                <span className="font-bold">code :</span>
+            {/* Informations du document */}
+            <div className="w-full md:w-48 bg-gray-50 border-2 border-gray-300 rounded-lg p-3">
+              <div className="text-sm mb-2">
+                <span className="font-bold">Code:</span>
                 <input
                   type="text"
                   value={formData.header.code}
                   onChange={(e) => updateHeader('code', e.target.value)}
-                  className="ml-2 border-0 bg-transparent focus:outline-none w-16"
+                  className="ml-2 border-0 bg-transparent focus:outline-none w-20"
                 />
               </div>
-              <div className="text-sm mb-1">
-                <span className="font-bold">Date :</span>
+              <div className="text-sm mb-2">
+                <span className="font-bold">Date:</span>
                 <input
                   type="text"
                   value={formData.header.dateCreation}
                   onChange={(e) => updateHeader('dateCreation', e.target.value)}
-                  className="ml-2 border-0 bg-transparent focus:outline-none w-20"
+                  className="ml-2 border-0 bg-transparent focus:outline-none w-24"
                 />
               </div>
               <div className="text-sm">
-                <span className="font-bold">version :</span>
+                <span className="font-bold">Version:</span>
                 <input
                   type="text"
                   value={formData.header.version}
@@ -587,43 +692,79 @@ const generatePDF = async () => {
             </div>
           </div>
 
-          {/* Form fields section */}
-          <div className="border-2 border-gray-400 mb-4">
-            {/* Date and Responsable row */}
-            <div className="flex border-b border-gray-400 p-3 bg-gray-50">
-              <div className="flex-1 flex items-center">
-                <span className="font-bold mr-2">Date :</span>
+          {/* Statut utilisateur */}
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-blue-800">
+                {user ? `Connecté en tant que: ${user.email}` : 'Non connecté - Fonctionnalités locales uniquement'}
+              </span>
+              <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">
+                {archivedSuivis.filter(a => a.source === 'firebase').length} docs Firebase | 
+                {archivedSuivis.filter(a => a.source === 'local').length} docs locaux
+              </span>
+            </div>
+          </div>
+
+          {/* Affichage des totaux */}
+          <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div className="bg-white p-3 rounded-lg shadow-sm">
+                <div className="text-sm font-semibold text-blue-800">Total Pallets</div>
+                <div className="text-2xl font-bold text-blue-600">{totals.totalPallets}</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm">
+                <div className="text-sm font-semibold text-green-800">Total Caisses</div>
+                <div className="text-2xl font-bold text-green-600">{totals.totalNombreCaisses}</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm">
+                <div className="text-sm font-semibold text-orange-800">Poids Brut Total</div>
+                <div className="text-2xl font-bold text-orange-600">{totals.totalPoidsBrut.toFixed(1)} kg</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm">
+                <div className="text-sm font-semibold text-purple-800">Poids Net Total</div>
+                <div className="text-2xl font-bold text-purple-600">{totals.totalPoidsNet.toFixed(1)} kg</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section formulaire */}
+          <div className="border-2 border-gray-300 rounded-lg mb-6 overflow-hidden">
+            {/* Date et Responsable */}
+            <div className="flex flex-col md:flex-row border-b border-gray-300 p-4 bg-gray-50">
+              <div className="flex-1 flex items-center mb-2 md:mb-0">
+                <span className="font-bold mr-2 min-w-24">Date traitement:</span>
                 <input
                   type="text"
                   value={formData.header.dateTraitement}
                   onChange={(e) => updateHeader('dateTraitement', e.target.value)}
-                  className="border-0 bg-transparent focus:outline-none"
-                  placeholder="02/10/2023"
+                  className="border border-gray-300 rounded px-3 py-1 focus:outline-none focus:border-blue-500 flex-1"
+                  placeholder="JJ/MM/AAAA"
                 />
               </div>
-              <div className="flex-1 flex items-center border-l border-gray-400 pl-3">
-                <span className="font-bold mr-2">Responsable Traçabilité :</span>
+              <div className="flex-1 flex items-center">
+                <span className="font-bold mr-2 min-w-40">Responsable Traçabilité:</span>
                 <input
                   type="text"
                   value={formData.header.responsableTracabilite}
                   onChange={(e) => updateHeader('responsableTracabilite', e.target.value)}
-                  className="border-0 bg-transparent focus:outline-none flex-1"
+                  className="border border-gray-300 rounded px-3 py-1 focus:outline-none focus:border-blue-500 flex-1"
+                  placeholder="Nom du responsable"
                 />
               </div>
             </div>
 
-            {/* Product and type */}
-            <div className="flex p-3 bg-green-100 items-center">
-              <div className="flex-1">
-                <span className="font-bold mr-2">Produit :</span>
+            {/* Produit et Type */}
+            <div className="flex flex-col md:flex-row p-4 bg-green-50 items-center">
+              <div className="flex-1 flex items-center mb-2 md:mb-0">
+                <span className="font-bold mr-2">Produit:</span>
                 <input
                   type="text"
                   value={formData.header.produit}
                   onChange={(e) => updateHeader('produit', e.target.value)}
-                  className="border-0 bg-transparent focus:outline-none font-bold"
+                  className="border border-gray-300 rounded px-3 py-1 focus:outline-none focus:border-blue-500 font-bold flex-1"
                 />
               </div>
-              <div className="flex gap-6">
+              <div className="flex gap-4">
                 <label className="flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -646,106 +787,116 @@ const generatePDF = async () => {
             </div>
           </div>
 
-          {/* Table for waste data */}
-          <div className="border-2 border-gray-400 mb-6 overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-green-100 border-b border-gray-400">
-                  <th className="p-2 border-r border-gray-400 text-sm font-bold">N° palette</th>
-                  <th className="p-2 border-r border-gray-400 text-sm font-bold">Nombre de<br/>caisses</th>
-                  <th className="p-2 border-r border-gray-400 text-sm font-bold">Poids Brut</th>
-                  <th className="p-2 border-r border-gray-400 text-sm font-bold">Poids Net</th>
-                  <th className="p-2 border-r border-gray-400 text-sm font-bold">Nature de<br/>déchet</th>
-                  <th className="p-2 text-sm font-bold">Variété</th>
-                </tr>
-              </thead>
-              <tbody>
-                {formData.rows.map((row: any, index: number) => (
-                  <tr key={index} className="border-b border-gray-400 hover:bg-gray-50">
-                    <td className="border-r border-gray-400">
-                      <input
-                        type="text"
-                        value={row.numeroPalette}
-                        onChange={(e) => updateRow(index, 'numeroPalette', e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && index < formData.rows.length - 1) {
-                            e.preventDefault();
-                            const nextInput = document.querySelector(`input[data-row="${index + 1}"][data-col="numeroPalette"]`) as HTMLInputElement;
-                            if (nextInput) nextInput.focus();
-                          }
-                        }}
-                        data-row={index}
-                        data-col="numeroPalette"
-                        className="w-full p-2 border-0 text-sm text-center focus:outline-none focus:bg-blue-50"
-                      />
-                    </td>
-                    <td className="border-r border-gray-400">
-                      <input
-                        type="text"
-                        value={row.nombreCaisses}
-                        onChange={(e) => updateRow(index, 'nombreCaisses', e.target.value)}
-                        className="w-full p-2 border-0 text-sm text-center focus:outline-none focus:bg-blue-50"
-                      />
-                    </td>
-                    <td className="border-r border-gray-400">
-                      <input
-                        type="text"
-                        value={row.poidsBrut}
-                        onChange={(e) => updateRow(index, 'poidsBrut', e.target.value)}
-                        className="w-full p-2 border-0 text-sm text-center focus:outline-none focus:bg-blue-50"
-                      />
-                    </td>
-                    <td className="border-r border-gray-400">
-                      <input
-                        type="text"
-                        value={row.poidsNet}
-                        onChange={(e) => updateRow(index, 'poidsNet', e.target.value)}
-                        className="w-full p-2 border-0 text-sm text-center focus:outline-none focus:bg-blue-50"
-                      />
-                    </td>
-                    <td className="border-r border-gray-400">
-                      <select
-                        value={row.natureDechet}
-                        onChange={(e) => updateRow(index, 'natureDechet', e.target.value)}
-                        className="w-full p-2 border-0 text-sm text-center focus:outline-none focus:bg-blue-50 cursor-pointer"
-                        disabled={!row.numeroPalette}
-                      >
-                        <option value="">—</option>
-                        <option value="D,MACHINE">D,MACHINE</option>
-                        <option value="MALO">MALO</option>
-                      </select>
-                    </td>
-                    <td>
-                      <select
-                        value={row.variete}
-                        onChange={(e) => updateRow(index, 'variete', e.target.value)}
-                        className="w-full p-2 border-0 text-sm text-center focus:outline-none focus:bg-blue-50 cursor-pointer"
-                        disabled={!row.numeroPalette}
-                      >
-                        <option value="">—</option>
-                        <option value="HASS">HASS</option>
-                        <option value="ZUTANO">ZUTANO</option>
-                      </select>
-                    </td>
+          {/* Tableau des données */}
+          <div className="border-2 border-gray-300 rounded-lg mb-6 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-green-100 border-b border-gray-300">
+                    <th className="p-3 border-r border-gray-300 text-sm font-bold text-center">N° palette</th>
+                    <th className="p-3 border-r border-gray-300 text-sm font-bold text-center">Nombre de caisses</th>
+                    <th className="p-3 border-r border-gray-300 text-sm font-bold text-center">Poids Brut (kg)</th>
+                    <th className="p-3 border-r border-gray-300 text-sm font-bold text-center">Poids Net (kg)</th>
+                    <th className="p-3 border-r border-gray-300 text-sm font-bold text-center">Nature de déchet</th>
+                    <th className="p-3 text-sm font-bold text-center">Variété</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {formData.rows.map((row: any, index: number) => (
+                    <tr key={index} className="border-b border-gray-300 hover:bg-gray-50 transition-colors">
+                      <td className="border-r border-gray-300">
+                        <input
+                          type="text"
+                          value={row.numeroPalette}
+                          onChange={(e) => updateRow(index, 'numeroPalette', e.target.value)}
+                          className="w-full p-3 border-0 text-sm text-center focus:outline-none focus:bg-blue-50"
+                          placeholder={index === 0 ? "1" : "Auto"}
+                        />
+                      </td>
+                      <td className="border-r border-gray-300">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={row.nombreCaisses}
+                          onChange={(e) => updateRow(index, 'nombreCaisses', e.target.value)}
+                          className="w-full p-3 border-0 text-sm text-center focus:outline-none focus:bg-blue-50"
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="border-r border-gray-300">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={row.poidsBrut}
+                          onChange={(e) => updateRow(index, 'poidsBrut', e.target.value)}
+                          className="w-full p-3 border-0 text-sm text-center focus:outline-none focus:bg-blue-50"
+                          placeholder="0.0"
+                        />
+                      </td>
+                      <td className="border-r border-gray-300">
+                        <input
+                          type="text"
+                          value={row.poidsNet}
+                          readOnly
+                          className="w-full p-3 border-0 text-sm text-center bg-gray-100 text-gray-600"
+                          placeholder="Auto-calculé"
+                        />
+                      </td>
+                      <td className="border-r border-gray-300">
+                        <select
+                          value={row.natureDechet}
+                          onChange={(e) => updateRow(index, 'natureDechet', e.target.value)}
+                          className="w-full p-3 border-0 text-sm text-center focus:outline-none focus:bg-blue-50 cursor-pointer bg-white"
+                          disabled={!row.numeroPalette}
+                        >
+                          <option value="">— Sélectionner —</option>
+                          <option value="D,MACHINE">D,MACHINE</option>
+                          <option value="MALO">MALO</option>
+                          <option value="petit calibre">petit calibre</option>
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          value={row.variete}
+                          onChange={(e) => updateRow(index, 'variete', e.target.value)}
+                          className="w-full p-3 border-0 text-sm text-center focus:outline-none focus:bg-blue-50 cursor-pointer bg-white"
+                          disabled={!row.numeroPalette}
+                        >
+                          <option value="">— Sélectionner —</option>
+                          <option value="HASS">HASS</option>
+                          <option value="ZUTANO">ZUTANO</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3">
+          {/* Actions principales */}
+          <div className="flex flex-wrap gap-3 mb-6">
             <button
               onClick={generatePDF}
-              className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-all shadow-md"
+              disabled={isLoading}
+              className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <FilePlus size={20} /> Générer PDF
+              <Download size={20} /> 
+              {isLoading ? 'Génération...' : 'Générer PDF'}
             </button>
             <button
               onClick={saveToFirebase}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-all shadow-md"
+              disabled={isLoading || !auth.currentUser}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Save size={20} /> Enregistrer (Firebase)
+              <Save size={20} /> 
+              {isLoading ? 'Sauvegarde...' : 'Enregistrer (Firebase)'}
+            </button>
+            <button
+              onClick={calculateAllPoidsNets}
+              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-all shadow-md"
+            >
+              <Calculator size={20} /> Calculer Poids Nets
             </button>
             <button
               onClick={resetForm}
@@ -757,32 +908,80 @@ const generatePDF = async () => {
               onClick={archiveCurrent}
               className="flex items-center gap-2 bg-amber-500 text-white px-6 py-3 rounded-lg hover:bg-amber-600 transition-all shadow-md"
             >
-              Archiver ce Suivi
+              <Archive size={20} /> Archiver Local
             </button>
           </div>
 
-          {/* Archive sidebar */}
-          <div className="mt-6">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold mb-2">Archivés</h3>
+          {/* Information sur le calcul */}
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="text-sm text-yellow-800">
+              <strong>Formule de calcul automatique :</strong> Poids Net = Poids Brut - (Nombre de Caisses × 2.8 kg + 15 kg tare palette)
+            </div>
+          </div>
+
+          {/* Archives */}
+          <div className="border-2 border-gray-300 rounded-lg p-4">
+            <div className="flex flex-col md:flex-row items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold mb-2 md:mb-0">Suivis Archivés ({archivedSuivis.length})</h3>
               <div className="flex gap-2">
-                <button onClick={syncArchivesFromFirebase} className="text-xs bg-sky-600 text-white px-2 py-1 rounded">Synchroniser Firebase</button>
-                <button onClick={() => { const saved = localStorage.getItem('suivis_dechet_archives'); if (saved) { setArchivedSuivis(JSON.parse(saved)); } }} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded border">Charger local</button>
+                <button 
+                  onClick={syncArchivesFromFirebase} 
+                  disabled={isLoading || !auth.currentUser}
+                  className="flex items-center gap-2 text-sm bg-sky-600 text-white px-3 py-2 rounded hover:bg-sky-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw size={16} />
+                  {isLoading ? 'Synchronisation...' : 'Sync Firebase'}
+                </button>
               </div>
             </div>
+            
             {archivedSuivis.length === 0 ? (
-              <div className="text-sm text-gray-500">Aucun suivi archivé</div>
+              <div className="text-center text-gray-500 py-8">
+                Aucun suivi archivé pour le moment
+              </div>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {archivedSuivis.map(a => (
-                  <div key={a.id} className="p-2 border rounded flex items-start justify-between">
-                    <div>
-                      <div className="font-medium text-sm">{a.header.produit} — {new Date(a.archivedAt).toLocaleString()}</div>
-                      <div className="text-xs text-gray-500">Traité: {a.header.dateTraitement}</div>
-                    </div>
-                    <div className="flex flex-col gap-2 ml-3">
-                      <button onClick={() => restoreArchive(a.id)} className="text-xs bg-emerald-600 text-white px-2 py-1 rounded">Restaurer</button>
-                      <button onClick={() => deleteArchive(a.id)} className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded border">Suppr.</button>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {archivedSuivis.map(archive => (
+                  <div key={archive.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:shadow-md transition-shadow">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">
+                            {archive.header.produit} - {new Date(archive.archivedAt).toLocaleDateString('fr-FR')}
+                          </span>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            archive.source === 'firebase' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {archive.source === 'firebase' ? '☁️ Firebase' : '💾 Local'}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          Traité le: {archive.header.dateTraitement} | 
+                          Responsable: {archive.header.responsableTracabilite || 'Non spécifié'}
+                        </div>
+                        <div className="text-xs text-blue-600 mt-2">
+                          📦 Pallets: {archive.totals?.totalPallets || 'N/A'} | 
+                          📋 Caisses: {archive.totals?.totalNombreCaisses || 'N/A'} | 
+                          ⚖️ Brut: {archive.totals?.totalPoidsBrut ? archive.totals.totalPoidsBrut.toFixed(1) : 'N/A'}kg | 
+                          📊 Net: {archive.totals?.totalPoidsNet ? archive.totals.totalPoidsNet.toFixed(1) : 'N/A'}kg
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-3 md:mt-0">
+                        <button 
+                          onClick={() => restoreArchive(archive.id)}
+                          className="flex items-center gap-1 px-3 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 transition-all"
+                        >
+                          <RefreshCw size={14} /> Restaurer
+                        </button>
+                        <button 
+                          onClick={() => deleteArchive(archive.id)}
+                          className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-600 text-sm rounded border border-red-200 hover:bg-red-200 transition-all"
+                        >
+                          <Trash2 size={14} /> Supprimer
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

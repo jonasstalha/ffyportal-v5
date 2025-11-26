@@ -135,12 +135,9 @@ export interface QualityRapport {
   updatedAt: string;
   submittedAt?: string;
   pdfUrl?: string;
-  visualPdfUrl?: string;
   archivedAt?: string;
-  archivedBy?: string;
   chiefComments?: string;
   chiefApprovalDate?: string;
-  metadata?: any;
 }
 
 // Collections
@@ -1178,162 +1175,21 @@ export const getQualityControlReports = async (phase?: 'controller' | 'chief'): 
 // Delete Quality Control Lot
 export const deleteQualityControlLot = async (lotId: string): Promise<void> => {
   try {
-    console.log(`Starting deletion of lot: ${lotId}`);
-    
-    // First, get the lot data to find associated images
-    const docRef = doc(db, QUALITY_CONTROL_COLLECTION, lotId);
-    const docSnap = await getDoc(docRef);
-    
-    if (docSnap.exists()) {
-      const lotData = docSnap.data();
-      console.log('Lot data found:', {
-        lotNumber: lotData.lotNumber,
-        hasImages: !!lotData.images,
-        imageType: Array.isArray(lotData.images) ? 'array' : typeof lotData.images
-      });
-      
-      let totalImagesFound = 0;
-      let imagesDeleted = 0;
-      let imageErrors = 0;
-      
-      // Method 1: Delete images stored as a simple array
-      if (lotData.images && Array.isArray(lotData.images)) {
-        totalImagesFound += lotData.images.length;
-        console.log(`Found ${lotData.images.length} images in array format for lot ${lotId}`);
-        
-        for (const imageUrl of lotData.images) {
-          if (typeof imageUrl === 'string' && imageUrl.trim()) {
-            try {
-              await deleteImageFromStorage(imageUrl);
-              imagesDeleted++;
-            } catch (error) {
-              imageErrors++;
-              console.warn(`Failed to delete image ${imageUrl}:`, error);
-            }
-          }
-        }
-      }
-      
-      // Method 2: Delete images organized by calibre (Record<string, string[]> format)
-      if (lotData.images && typeof lotData.images === 'object' && !Array.isArray(lotData.images)) {
-        console.log('Found calibre-organized images for lot', lotId);
-        
-        for (const [calibre, imageArray] of Object.entries(lotData.images)) {
-          if (Array.isArray(imageArray)) {
-            totalImagesFound += imageArray.length;
-            console.log(`Found ${imageArray.length} images for calibre ${calibre}`);
-            
-            for (const imageUrl of imageArray) {
-              if (typeof imageUrl === 'string' && imageUrl.trim()) {
-                try {
-                  await deleteImageFromStorage(imageUrl);
-                  imagesDeleted++;
-                } catch (error) {
-                  imageErrors++;
-                  console.warn(`Failed to delete calibre image ${imageUrl}:`, error);
-                }
-              }
-            }
-          }
-        }
-      }
-      
-      // Method 3: Check for other possible image fields in the document
-      const possibleImageFields = ['pdfUrl', 'visualPdfUrl', 'attachments'];
-      for (const field of possibleImageFields) {
-        if (lotData[field] && typeof lotData[field] === 'string') {
-          try {
-            await deleteImageFromStorage(lotData[field]);
-            imagesDeleted++;
-            console.log(`Deleted ${field}: ${lotData[field]}`);
-          } catch (error) {
-            imageErrors++;
-            console.warn(`Failed to delete ${field} ${lotData[field]}:`, error);
-          }
-        }
-      }
-      
-      console.log(`Image deletion summary for lot ${lotId}:`, {
-        totalFound: totalImagesFound,
-        deleted: imagesDeleted,
-        errors: imageErrors
-      });
-      
-    } else {
-      console.warn(`Lot ${lotId} not found in Firestore, but will attempt to delete anyway`);
-    }
-    
-    // Finally, delete the document from Firestore
-    await deleteDoc(docRef);
-    console.log(`✅ Successfully deleted lot ${lotId} from Firestore`);
-    
+    await deleteDoc(doc(db, QUALITY_CONTROL_COLLECTION, lotId));
   } catch (error) {
-    console.error('❌ Error deleting quality control lot:', error);
-    throw new Error(`Failed to delete lot ${lotId}: ${(error as Error).message}`);
+    console.error('Error deleting quality control lot:', error);
+    throw error;
   }
 };
 
 // Delete image from Firebase Storage
 export const deleteImageFromStorage = async (imageUrl: string): Promise<void> => {
   try {
-    // Handle both full URLs and storage paths
-    let storagePath = imageUrl;
-    
-    // If it's a full Firebase Storage URL, extract the path
-    if (imageUrl.includes('firebasestorage.googleapis.com') || imageUrl.includes('storage.googleapis.com')) {
-      try {
-        // For Firebase Storage URLs, we need to extract the path from the URL
-        // URL format: https://firebasestorage.googleapis.com/v0/b/bucket/o/path?params
-        const url = new URL(imageUrl);
-        const pathParts = url.pathname.split('/o/');
-        if (pathParts.length > 1) {
-          // Decode the path part after '/o/'
-          storagePath = decodeURIComponent(pathParts[1].split('?')[0]);
-        }
-      } catch (urlError) {
-        console.warn('Could not parse storage URL, trying as direct path:', urlError);
-        // If URL parsing fails, try using the original string as a path
-      }
-    }
-    
-    console.log(`Attempting to delete image from storage path: ${storagePath}`);
-    const imageRef = ref(storage, storagePath);
+    const imageRef = ref(storage, imageUrl);
     await deleteObject(imageRef);
-    console.log(`Successfully deleted image: ${storagePath}`);
-    
   } catch (error) {
     console.error('Error deleting image from storage:', error);
-    console.error('Image URL/Path:', imageUrl);
-    
-    // Don't throw error for individual image deletions to avoid blocking lot deletion
-    // Just log the error and continue
-    if (error instanceof Error) {
-      console.error('Error details:', {
-        name: error.name,
-        message: error.message,
-        code: (error as any).code
-      });
-    }
-  }
-};
-
-// Delete all images in a storage folder (for comprehensive cleanup)
-export const deleteStorageFolderContents = async (folderPath: string): Promise<void> => {
-  try {
-    // This is a helper function to delete entire folders of images
-    // Firebase Storage doesn't have direct folder deletion, so we'll rely on individual file deletion
-    console.log(`Attempting to clean up storage folder: ${folderPath}`);
-    
-    // For quality control lots, common folder patterns are:
-    // - quality_control/lots/{lotId}/
-    // - quality_control/calibres/{lotId}/
-    // - quality_control/tests/{lotId}/
-    
-    // Note: Firebase Storage doesn't support listing files in the client SDK for security reasons
-    // So we rely on the document data to tell us which files to delete
-    
-  } catch (error) {
-    console.error('Error deleting storage folder contents:', error);
+    throw error;
   }
 };
 
@@ -1878,7 +1734,6 @@ export const qualityControlService = {
   uploadQualityControlImage,
   uploadCalibreImages,
   deleteImageFromStorage,
-  deleteStorageFolderContents,
   
   // Rapport Management Functions
   saveQualityRapport,

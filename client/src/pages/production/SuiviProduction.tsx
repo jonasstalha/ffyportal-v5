@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Save, FilePlus, RefreshCw, Check, Calendar, Package, User, Thermometer, Plus, Copy, X, Trash2, Edit, Archive } from 'lucide-react';
+import { Save, FilePlus, RefreshCw, Check, Calendar, Package, User, Thermometer, Plus, Copy, X, Trash2, Edit, Archive, Import } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { firestore } from '../../lib/firebase';
@@ -17,7 +17,7 @@ import {
 } from 'firebase/firestore';
 import { useSharedLots } from '../../hooks/useSharedLots';
 import { SharedLot } from '../../lib/sharedLotService';
-
+import LOGO from '../../../assets/icon.png';
 // Production Lot Interface
 interface ProductionLot {
   id: string;
@@ -62,21 +62,21 @@ interface ProductionLot {
 const CAISSE_OPTIONS = [
   { value: '90', reduction: 51, label: '90 Caisses (-51kg)' },
   { value: '100', reduction: 60, label: '100 Caisses (-60kg)' },
-  { value: '108', reduction: 65, label: '108 Caisses (-65kg)' },
+  { value: '108', reduction: 60, label: '108 Caisses (-65kg)' },
   { value: '220', reduction: 80, label: '220 Caisses (-80kg)' },
   { value: '264', reduction: 94, label: '264 Caisses (-94kg)' }
 ];
 
 const SuiviProduction = () => {
   // Use shared lot management
-  const { 
-    lots: sharedLots, 
-    loading: sharedLoading, 
-    error: sharedError, 
-    addLot: addSharedLot, 
-    updateLot: updateSharedLot, 
+  const {
+    lots: sharedLots,
+    loading: sharedLoading,
+    error: sharedError,
+    addLot: addSharedLot,
+    updateLot: updateSharedLot,
     deleteLot: deleteSharedLot,
-    getProductionLots 
+    getProductionLots
   } = useSharedLots();
 
   // Get only production lots (separate active vs archived)
@@ -224,26 +224,26 @@ const SuiviProduction = () => {
   const calculatePoidsNet = (poidsBrut: string, nbrCP: string): string => {
     const poidsBrutNum = parseFloat(poidsBrut) || 0;
     const nbrCPNum = parseInt(nbrCP) || 0;
-    
+
     if (poidsBrutNum === 0 || nbrCPNum === 0) return '';
-    
+
     // Find the reduction amount for the selected number of caisses
     const selectedOption = CAISSE_OPTIONS.find(option => option.value === nbrCP);
     const reduction = selectedOption ? selectedOption.reduction : 0;
-    
+
     const poidsNet = Math.max(0, poidsBrutNum - reduction);
-    
+
     return poidsNet.toFixed(2);
   };
 
   const updateCurrentLotData = async (updates: Partial<ProductionLot['formData']>) => {
     if (!currentLotId) return;
-    
+
     const currentLot = getCurrentLot();
     if (!currentLot) return;
 
     const updatedFormData = { ...currentLot.formData, ...updates };
-    
+
     try {
       await updateSharedLot(currentLotId, {
         productionData: updatedFormData,
@@ -259,7 +259,7 @@ const SuiviProduction = () => {
     const currentData = getCurrentFormData();
     const currentRows = currentData.productionRows || [];
     const newRows = [...currentRows];
-    
+
     // Update the field
     newRows[rowIndex] = {
       ...newRows[rowIndex],
@@ -270,7 +270,7 @@ const SuiviProduction = () => {
     if (field === 'poidsBrut' || field === 'nbrCP') {
       const poidsBrut = field === 'poidsBrut' ? value : newRows[rowIndex].poidsBrut;
       const nbrCP = field === 'nbrCP' ? value : newRows[rowIndex].nbrCP;
-      
+
       if (poidsBrut && nbrCP) {
         newRows[rowIndex].poidsNet = calculatePoidsNet(poidsBrut, nbrCP);
       } else {
@@ -314,7 +314,7 @@ const SuiviProduction = () => {
   const handleKeyDown = (e: React.KeyboardEvent, rowIndex: number, colIndex: number) => {
     const totalRows = 26;
     const totalCols = 9; // Number of editable columns
-    
+
     switch (e.key) {
       case 'ArrowUp':
         e.preventDefault();
@@ -483,9 +483,9 @@ const SuiviProduction = () => {
             setCurrentLotId('');
           }
         }
-        
+
         await deleteSharedLot(lotId);
-        
+
       } catch (error) {
         console.error('Error deleting lot:', error);
         alert('Erreur lors de la suppression du lot');
@@ -564,7 +564,7 @@ const SuiviProduction = () => {
 
   const calculateTotals = () => {
     const currentData = getCurrentFormData();
-    
+
     if (!currentData || !currentData.productionRows || !Array.isArray(currentData.productionRows)) {
       return { poidsBrut: 0, poidsNet: 0, nbrCP: 0 };
     }
@@ -586,16 +586,16 @@ const SuiviProduction = () => {
     try {
       const currentData = getCurrentFormData();
       const currentLot = getCurrentLot();
-      
+
       if (!currentData || !currentData.productionRows || !Array.isArray(currentData.productionRows)) {
         console.error('Invalid production data - cannot generate PDF');
         setIsGeneratingPDF(false);
         return;
       }
-      
+
       const jsPDF = (await import('jspdf')).default;
       const doc = new jsPDF('p', 'mm', 'a4');
-      
+
       // Professional color scheme
       const colors = {
         primary: [0, 82, 33],         // Dark Professional Green
@@ -608,18 +608,18 @@ const SuiviProduction = () => {
         tableHeader: [200, 230, 201], // Table Header Green
         white: [255, 255, 255]        // White
       };
-      
+
       // Helper functions
       const setColor = (color: number[]) => {
         doc.setFillColor(color[0], color[1], color[2]);
         doc.setTextColor(color[0], color[1], color[2]);
       };
-      
+
       const drawRect = (x: number, y: number, w: number, h: number, fill?: boolean, stroke: boolean = true) => {
         if (fill) doc.rect(x, y, w, h, 'F');
         if (stroke) doc.rect(x, y, w, h, 'S');
       };
-      
+
       const drawText = (text: string, x: number, y: number, size: number, align: 'left' | 'center' | 'right' = 'left', bold: boolean = false, color?: number[]) => {
         doc.setFontSize(size);
         doc.setFont('helvetica', bold ? 'bold' : 'normal');
@@ -628,7 +628,7 @@ const SuiviProduction = () => {
         // Reset to default color
         if (color) setColor(colors.darkText);
       };
-      
+
       const drawLine = (x1: number, y1: number, x2: number, y2: number, width: number = 0.3, color?: number[]) => {
         if (color) doc.setDrawColor(color[0], color[1], color[2]);
         doc.setLineWidth(width);
@@ -636,63 +636,79 @@ const SuiviProduction = () => {
         doc.setLineWidth(0.3);
         if (color) doc.setDrawColor(colors.border[0], colors.border[1], colors.border[2]);
       };
-      
+
       // Page setup
       const pageWidth = 210;
-      const margin = 12;
+      const margin = 5;
       const contentWidth = pageWidth - (margin * 2);
       let yPos = margin;
       let pageNumber = 1;
-      
+
       // === PROFESSIONAL HEADER ===
       setColor(colors.primary);
-      drawRect(margin, yPos, contentWidth, 20, true);
+      drawRect(margin, yPos, contentWidth, 28, true); // Increased height to accommodate everything
+
+      // Add logo (you'll need to add your logo image to the project)
+      try {
+        // Replace '/logo.png' with your actual logo path
+        const logoUrl = LOGO; // or '/images/logo.png' - adjust path as needed
+        doc.addImage(logoUrl, 'PNG', margin + 5, yPos + 4, 20, 20);
+      } catch (error) {
+        console.log('Logo not found, continuing without logo');
+        // Draw a placeholder logo box
+        setColor(colors.white);
+        drawRect(margin + 5, yPos + 4, 20, 20, false);
+        drawText('LOGO', margin + 15, yPos + 14, 8, 'center', true, colors.white);
+      }
+
+      // Main company name - centered
       setColor(colors.white);
-      drawText('FRUITS FOR YOU', pageWidth / 2, yPos + 8, 16, 'center', true, colors.white);
-      drawText('RAPPORT DE PRODUCTION - AVOCAT', pageWidth / 2, yPos + 15, 12, 'center', false, colors.white);
-      yPos += 25;
-      
-      // Company info box
-      setColor(colors.headerBg);
-      drawRect(margin, yPos, contentWidth, 16, true);
-      setColor(colors.primary);
-      drawText('SMQ.ENR 23 - Version 01 - Document de Traçabilité', margin + 5, yPos + 6, 9, 'left', true);
-      drawText(`Généré le: ${format(new Date(), 'dd/MM/yyyy à HH:mm')}`, pageWidth - margin - 5, yPos + 6, 9, 'right', false);
-      yPos += 20;
-      
+      drawText('FRUITS FOR YOU', pageWidth / 2, yPos + 10, 18, 'center', true, colors.white);
+
+      // Document title - centered below company name
+      drawText('SUIVI DE PRODUCTION - AVOCAT', pageWidth / 2, yPos + 18, 12, 'center', false, colors.white);
+
+      // Left side text - small and aligned left
+      setColor(colors.white);
+      drawText('SMQ.ENR 23 - Version 01', margin + 30, yPos + 24, 8, 'left', false, colors.white);
+
+      // Right side text - small and aligned right
+      drawText(`Généré le: ${format(new Date(), 'dd/MM/yyyy à HH:mm')}`, pageWidth - margin - 5, yPos + 24, 8, 'right', false, colors.white);
+
+      yPos += 32;
+
       // === PRODUCTION INFORMATION ===
       // Main info section
       setColor(colors.darkText);
-      drawText('INFORMATIONS PRODUCTION', margin, yPos, 12, 'left', true);
-      yPos += 6;
+      drawText('INFORMATIONS PRODUCTION', margin, 45, 14, 'left', true);
+      yPos += 12;
       drawLine(margin, yPos, margin + 80, yPos, 1, colors.primary);
       yPos += 8;
-      
+
       // Info grid
       const infoData = [
-        { label: 'N° Lot Production:', value: currentLot?.lotNumber || 'N/A' },
         { label: 'N° Lot Client:', value: currentData.headerData?.numeroLotClient || 'N/A' },
         { label: 'Date Production:', value: currentData.headerData?.date || 'N/A' },
         { label: 'Type Production:', value: currentData.headerData?.typeProduction || 'N/A' },
         { label: 'Nombre Palettes:', value: currentData.nombrePalettes || '0' }
       ];
-      
+
       infoData.forEach((info, index) => {
         const col = index % 2;
         const row = Math.floor(index / 2);
         const x = margin + (col * (contentWidth / 2));
         const y = yPos + (row * 6);
-        
+
         drawText(info.label, x, y, 9, 'left', true);
         drawText(info.value, x + 45, y, 9, 'left', false);
       });
-      
+
       yPos += 18;
-      
+
       // === PRODUCTION TABLE - ENHANCED ===
       const tableHeaders = ['N°', 'Date', 'Heure', 'Calibre', 'Poids Brut (kg)', 'Poids Net (kg)', 'Lot Interne', 'Variété', 'Nbr C/P', 'Chambre'];
-      const colWidths = [8, 18, 14, 12, 20, 20, 25, 18, 14, 18];
-      
+      const colWidths = [8, 22, 18, 15, 25, 25, 25, 18, 14, 18];
+
       // Table header with professional styling
       setColor(colors.tableHeader);
       drawRect(margin, yPos, contentWidth, 10, true);
@@ -703,23 +719,23 @@ const SuiviProduction = () => {
         xStart += colWidths[index];
       });
       yPos += 10;
-      
+
       // Table rows with enhanced formatting
       const rowHeight = 7;
       let rowCount = 0;
-      
+
       for (let i = 0; i < currentData.productionRows.length; i++) {
         const row = currentData.productionRows[i];
-        
+
         // Skip empty rows
         if (!row.date && !row.poidsBrut && !row.poidsNet && !row.numeroLotInterne) continue;
-        
+
         // Check for page break
         if (yPos + rowHeight > 270) {
           doc.addPage();
           pageNumber++;
           yPos = margin;
-          
+
           // Header on new page
           setColor(colors.tableHeader);
           drawRect(margin, yPos, contentWidth, 10, true);
@@ -731,15 +747,15 @@ const SuiviProduction = () => {
           });
           yPos += 10;
         }
-        
+
         const rowY = yPos + (rowCount * rowHeight);
-        
+
         // Alternate row background
         if (rowCount % 2 === 0) {
           setColor([248, 248, 248]);
           drawRect(margin, rowY, contentWidth, rowHeight, true, false);
         }
-        
+
         // Row data
         setColor(colors.darkText);
         xStart = margin;
@@ -755,44 +771,43 @@ const SuiviProduction = () => {
           row.nbrCP || '-',
           row.chambreFroide || '-'
         ];
-        
+
         rowData.forEach((data, colIndex) => {
           // Special formatting for weight columns
           const textColor = (colIndex === 4 || colIndex === 5) && data !== '-' ? colors.primary : colors.darkText;
           drawText(data, xStart + colWidths[colIndex] / 2, rowY + (rowHeight / 2) + 1, 7, 'center', false, textColor);
           xStart += colWidths[colIndex];
         });
-        
+
         // Bottom border
         drawLine(margin, rowY + rowHeight, margin + contentWidth, rowY + rowHeight, 0.1);
-        
+
         rowCount++;
       }
-      
-      yPos += (rowCount * rowHeight) + 8;
-      
+
+      yPos += (rowCount * rowHeight) + 5;
+
       // === TOTALS SECTION - ENHANCED ===
       const totals = calculateTotals();
       setColor(colors.tableHeader);
       drawRect(margin, yPos, contentWidth, 12, true);
       setColor(colors.primary);
-      
+
       drawText('TOTAUX GÉNÉRAUX', margin + 5, yPos + 4, 10, 'left', true, colors.primary);
-      drawText(`Poids Brut Total: ${totals.poidsBrut.toFixed(2)} kg`, margin + 60, yPos + 4, 9, 'left', true);
-      drawText(`Poids Net Total: ${totals.poidsNet.toFixed(2)} kg`, margin + 120, yPos + 4, 9, 'left', true);
-      drawText(`Nombre Total C/P: ${totals.nbrCP}`, margin + 180, yPos + 4, 9, 'left', true);
-      
-      yPos += 16;
-      
+      drawText(`Poids Brut Total: ${totals.poidsBrut.toFixed(2)} kg`, margin + 45, yPos + 4, 9, 'left', true);
+      drawText(`Poids Net Total: ${totals.poidsNet.toFixed(2)} kg`, margin + 100, yPos + 4, 9, 'left', true);
+      drawText(`Nombre Total C/P: ${totals.nbrCP}`, margin + 155, yPos + 4, 9, 'left', true);
+
+      yPos += 10;
+
       // === CALIBRE DISTRIBUTION - ENHANCED ===
       setColor(colors.darkText);
-      drawText('RÉPARTITION PAR CALIBRE', margin, yPos, 11, 'left', true);
       yPos += 6;
-      
+
       const calibres = Object.keys(currentData.calibreData || {});
       const calibreWidth = 14;
       xStart = margin;
-      
+
       // Calibre header
       setColor(colors.tableHeader);
       drawRect(margin, yPos, contentWidth, 6, true);
@@ -801,92 +816,82 @@ const SuiviProduction = () => {
         drawText(calibre, xStart + calibreWidth / 2, yPos + 4, 8, 'center', true, colors.primary);
         xStart += calibreWidth;
       });
-      
+
       yPos += 6;
-      
+
       // Calibre values
       xStart = margin;
       calibres.forEach(calibre => {
         const value = currentData.calibreData?.[parseInt(calibre) as keyof typeof currentData.calibreData] || 0;
         const hasValue = value > 0;
-        
+
         if (hasValue) {
           setColor(colors.white);
           drawRect(xStart, yPos, calibreWidth, 6, true, false);
           setColor(colors.primary);
         }
-        
+
         drawText(value.toString(), xStart + calibreWidth / 2, yPos + 4, 8, 'center', true, hasValue ? colors.primary : colors.lightText);
         xStart += calibreWidth;
       });
-      
+
       yPos += 12;
-      
+
       // === SIGNATURES SECTION - PROFESSIONAL ===
-      setColor(colors.darkText);
-      drawText('APPROBATIONS ET VISAS', margin, yPos, 11, 'left', true);
-      yPos += 6;
-      
+
+
       const signatures = [
-        { 
-          label: 'CONTROLEUR QUALITÉ', 
+        {
+          label: 'CONTROLEUR QUALITÉ',
           value: currentData.visas?.controleurQualite,
-          sublabel: 'Vérification et contrôle' 
+          sublabel: ''
         },
-        { 
-          label: 'RESPONSABLE QUALITÉ', 
+        {
+          label: 'RESPONSABLE QUALITÉ',
           value: currentData.visas?.responsableQualite,
-          sublabel: 'Validation technique' 
+          sublabel: ''
         },
-        { 
-          label: 'DIRECTEUR OPÉRATIONNEL', 
+        {
+          label: 'DIRECTEUR OPÉRATIONNEL',
           value: currentData.visas?.directeurOperationnel,
-          sublabel: 'Approbation finale' 
+          sublabel: ''
         }
       ];
-      
+
       const sigWidth = (contentWidth - 10) / 3;
       xStart = margin;
-      
+
       signatures.forEach((sig, index) => {
         // Signature box
         setColor(colors.headerBg);
-        drawRect(xStart, yPos, sigWidth, 25, true);
+        drawRect(xStart, yPos, sigWidth, 15, true);
         setColor(colors.darkText);
-        
+
         // Labels
         drawText(sig.label, xStart + sigWidth / 2, yPos + 6, 8, 'center', true);
         drawText(sig.sublabel, xStart + sigWidth / 2, yPos + 10, 7, 'center', false, colors.lightText);
-        
-        // Signature line or value
-        drawLine(xStart + 10, yPos + 18, xStart + sigWidth - 10, yPos + 18, 0.5);
-        
-        if (sig.value) {
-          drawText(sig.value, xStart + sigWidth / 2, yPos + 22, 9, 'center', true, colors.primary);
-        } else {
-          drawText('Signature', xStart + sigWidth / 2, yPos + 22, 7, 'center', false, colors.lightText);
-        }
-        
+
+
         xStart += sigWidth + 5;
       });
-      
+
       yPos += 32;
-      
+
       // === PROFESSIONAL FOOTER ===
       drawLine(margin, yPos, pageWidth - margin, yPos, 0.5, colors.primary);
       yPos += 3;
-      
+
       setColor(colors.lightText);
       drawText(`FRUITS FOR YOU - Système de Gestion de la Qualité - Page ${pageNumber}`, pageWidth / 2, yPos, 8, 'center', false);
       drawText(`Document: Rapport Production Avocat - Lot: ${currentLot?.lotNumber || 'N/A'}`, pageWidth / 2, yPos + 4, 7, 'center', false);
-      
+
       // Save PDF with professional filename
-      const fileName = `Rapport_Production_${currentLot?.lotNumber?.replace(/\s+/g, '_') || 'Lot'}_${format(new Date(), 'yyyyMMdd')}.pdf`;
+      const fileName = `suivi_Production_${currentLot?.lotNumber?.replace(/\s+/g, '_') || 'Lot'}_${format(new Date(), 'yyyyMMdd')}.pdf`;
       doc.save(fileName);
-      
+
       setShowSuccessMessage(true);
       setTimeout(() => setShowSuccessMessage(false), 3000);
-      
+
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Erreur lors de la génération du PDF');
@@ -967,7 +972,7 @@ const SuiviProduction = () => {
       console.error('Error syncing to quality control:', error);
       alert('Lot sauvegardé avec succès mais erreur lors de la synchronisation avec le contrôle qualité.');
     }
-    
+
     setFilteredRapports([rapportData]);
 
     // Archive the lot
@@ -990,18 +995,18 @@ const SuiviProduction = () => {
     try {
       const currentData = getCurrentFormData();
       const currentLot = getCurrentLot();
-      
+
       const data = {
         lotData: currentLot,
         formData: currentData,
         savedAt: new Date().toISOString(),
       };
       await setDoc(doc(firestore, 'production_suivi', currentLot?.id || 'current'), data);
-      
+
       if (currentLot) {
         await syncProductionToQuality(currentLot, currentData);
       }
-      
+
       alert('Production enregistrée et visible publiquement !');
     } catch (e: any) {
       console.error('Erreur lors de la sauvegarde Firestore:', e);
@@ -1029,8 +1034,8 @@ const SuiviProduction = () => {
         .filter((num: string) => num && num.trim() !== '');
 
       const existingLots = await getQualityControlLots('controller');
-      const existingLot = existingLots.find(lot => 
-        lot.lotNumber === currentLot.lotNumber || 
+      const existingLot = existingLots.find(lot =>
+        lot.lotNumber === currentLot.lotNumber ||
         lot.formData.clientLot === currentData.headerData?.numeroLotClient
       );
 
@@ -1091,7 +1096,7 @@ const SuiviProduction = () => {
 
         await saveQualityControlLot(qualityControlData);
       }
-      
+
     } catch (error) {
       console.error('Error syncing production data to quality control:', error);
     }
@@ -1130,12 +1135,12 @@ const SuiviProduction = () => {
   useEffect(() => {
     const currentLot = getCurrentLot();
     const currentData = getCurrentFormData();
-    
+
     if (currentLot && currentData && currentData.productionRows) {
-      const hasRelevantData = currentData.productionRows.some((row: any) => 
+      const hasRelevantData = currentData.productionRows.some((row: any) =>
         row.poidsBrut || row.poidsNet || row.numeroLotInterne
       );
-      
+
       if (hasRelevantData) {
         const timeoutId = setTimeout(async () => {
           try {
@@ -1153,8 +1158,8 @@ const SuiviProduction = () => {
   // Handle click outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showLotManagement && event.target && 
-          !(event.target as Element).closest('.lot-management-dropdown')) {
+      if (showLotManagement && event.target &&
+        !(event.target as Element).closest('.lot-management-dropdown')) {
         setShowLotManagement(false);
       }
     };
@@ -1202,7 +1207,7 @@ const SuiviProduction = () => {
   return (
     <div className="bg-gradient-to-b from-green-50 to-white min-h-screen p-4 md:p-6">
       <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-xl p-6">
-        
+
         {/* Lot Management Header */}
         <div className="bg-white border-b p-4 shadow-sm mb-6">
           <div className="flex justify-between items-center mb-4">
@@ -1241,11 +1246,10 @@ const SuiviProduction = () => {
                               <div className="flex items-center gap-2">
                                 <Package size={14} />
                                 <span className="text-sm">{lot.lotNumber}</span>
-                                <span className={`px-2 py-1 text-xs rounded-full ${
-                                  lot.status === 'termine' ? 'bg-green-200 text-green-800' :
-                                  lot.status === 'en_cours' ? 'bg-yellow-200 text-yellow-800' :
-                                  'bg-gray-200 text-gray-600'
-                                }`}>
+                                <span className={`px-2 py-1 text-xs rounded-full ${lot.status === 'termine' ? 'bg-green-200 text-green-800' :
+                                    lot.status === 'en_cours' ? 'bg-yellow-200 text-yellow-800' :
+                                      'bg-gray-200 text-gray-600'
+                                  }`}>
                                   {lot.status}
                                 </span>
                               </div>
@@ -1302,23 +1306,21 @@ const SuiviProduction = () => {
               <div key={lot.id} className="flex items-center bg-gray-100 rounded-lg overflow-hidden min-w-fit">
                 <button
                   onClick={() => setCurrentLotId(lot.id)}
-                  className={`px-4 py-2 flex items-center gap-2 transition-all min-w-0 ${
-                    currentLotId === lot.id
+                  className={`px-4 py-2 flex items-center gap-2 transition-all min-w-0 ${currentLotId === lot.id
                       ? 'bg-green-600 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                    }`}
                 >
                   <Package size={16} />
                   <span className="whitespace-nowrap">{lot.lotNumber}</span>
-                  <span className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${
-                    lot.status === 'termine' ? 'bg-green-200 text-green-800' :
-                    lot.status === 'en_cours' ? 'bg-yellow-200 text-yellow-800' :
-                    'bg-gray-200 text-gray-600'
-                  }`}>
+                  <span className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${lot.status === 'termine' ? 'bg-green-200 text-green-800' :
+                      lot.status === 'en_cours' ? 'bg-yellow-200 text-yellow-800' :
+                        'bg-gray-200 text-gray-600'
+                    }`}>
                     {lot.status}
                   </span>
                 </button>
-                
+
                 <div className="flex bg-gray-50 border-l border-gray-200">
                   <button
                     onClick={() => duplicateLot(lot.id)}
@@ -1522,7 +1524,7 @@ const SuiviProduction = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Action Buttons */}
           <div className="flex flex-col gap-3 mt-6 md:mt-0">
             <button
@@ -1542,7 +1544,7 @@ const SuiviProduction = () => {
                 </>
               )}
             </button>
-            
+
             <button
               onClick={resetForm}
               className="flex items-center gap-2 bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl"
@@ -1566,7 +1568,7 @@ const SuiviProduction = () => {
             </button>
           </div>
         </div>
-        
+
         {showSuccessMessage && (
           <div className="mb-6 bg-green-50 border-l-4 border-green-500 text-green-700 p-4 rounded-r-lg animate-fade-in flex items-center">
             <div className="bg-green-100 rounded-full p-1 mr-3">
@@ -1575,7 +1577,7 @@ const SuiviProduction = () => {
             <span>Rapport PDF généré avec succès!</span>
           </div>
         )}
-        
+
         {/* Production Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
@@ -1596,11 +1598,9 @@ const SuiviProduction = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {(currentData.productionRows || []).map((row: any, rowIndex: number) => (
-                  <tr key={rowIndex} 
-                      className={`group hover:bg-green-50 transition-colors ${
-                        rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'
-                      } ${
-                        focusedCell?.row === rowIndex ? 'ring-2 ring-blue-500 ring-inset' : ''
+                  <tr key={rowIndex}
+                    className={`group hover:bg-green-50 transition-colors ${rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'
+                      } ${focusedCell?.row === rowIndex ? 'ring-2 ring-blue-500 ring-inset' : ''
                       }`}>
                     <td className="px-3 py-2 border-r whitespace-nowrap text-sm font-medium text-gray-900">
                       {row.numero}
@@ -1612,9 +1612,8 @@ const SuiviProduction = () => {
                         onChange={(e) => handleRowChange(rowIndex, 'date', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 0)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 0 })}
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 0 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 0 ? 'bg-blue-50' : ''
+                          }`}
                       />
                     </td>
                     <td className="px-3 py-2 border-r">
@@ -1624,9 +1623,8 @@ const SuiviProduction = () => {
                         onChange={(e) => handleRowChange(rowIndex, 'heure', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 1)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 1 })}
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 1 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 1 ? 'bg-blue-50' : ''
+                          }`}
                       />
                     </td>
                     <td className="px-3 py-2 border-r">
@@ -1637,9 +1635,8 @@ const SuiviProduction = () => {
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 2)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 2 })}
                         placeholder="ex: 14-16"
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 2 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 2 ? 'bg-blue-50' : ''
+                          }`}
                       />
                     </td>
                     <td className="px-3 py-2 border-r">
@@ -1650,9 +1647,8 @@ const SuiviProduction = () => {
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 3)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 3 })}
                         step="0.1"
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 3 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 3 ? 'bg-blue-50' : ''
+                          }`}
                       />
                     </td>
                     <td className="px-3 py-2 border-r">
@@ -1672,9 +1668,8 @@ const SuiviProduction = () => {
                         onChange={(e) => handleRowChange(rowIndex, 'numeroLotInterne', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 4)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 4 })}
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 4 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 4 ? 'bg-blue-50' : ''
+                          }`}
                       />
                     </td>
                     <td className="px-3 py-2 border-r">
@@ -1683,9 +1678,8 @@ const SuiviProduction = () => {
                         onChange={(e) => handleRowChange(rowIndex, 'variete', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 5)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 5 })}
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 5 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 5 ? 'bg-blue-50' : ''
+                          }`}
                       >
                         <option value="">Sélectionner</option>
                         {varietesAvocat.map((variete) => (
@@ -1699,9 +1693,8 @@ const SuiviProduction = () => {
                         onChange={(e) => handleRowChange(rowIndex, 'nbrCP', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 6)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 6 })}
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 6 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 6 ? 'bg-blue-50' : ''
+                          }`}
                       >
                         <option value="">Sélectionner</option>
                         {CAISSE_OPTIONS.map((option) => (
@@ -1717,9 +1710,8 @@ const SuiviProduction = () => {
                         onChange={(e) => handleRowChange(rowIndex, 'chambreFroide', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, rowIndex, 7)}
                         onFocus={() => setFocusedCell({ row: rowIndex, col: 7 })}
-                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${
-                          focusedCell?.row === rowIndex && focusedCell?.col === 7 ? 'bg-blue-50' : ''
-                        }`}
+                        className={`w-full p-1.5 text-sm rounded border border-gray-300 focus:ring-1 focus:ring-green-500 focus:border-green-500 ${focusedCell?.row === rowIndex && focusedCell?.col === 7 ? 'bg-blue-50' : ''
+                          }`}
                       >
                         <option value="">Sélectionner</option>
                         {chambresFreides.map((chambre) => (
@@ -1733,7 +1725,7 @@ const SuiviProduction = () => {
             </table>
           </div>
         </div>
-        
+
         {/* Keyboard Shortcuts Help */}
         <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
           <h4 className="text-sm font-semibold text-blue-800 mb-2">Raccourcis clavier:</h4>
@@ -1744,7 +1736,7 @@ const SuiviProduction = () => {
             <div>Enter : Ligne suivante</div>
           </div>
         </div>
-        
+
         {/* Totals and Visas */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Totals */}
@@ -1765,7 +1757,7 @@ const SuiviProduction = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Visas */}
           <div className="p-6 bg-green-50 rounded-lg">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Visas</h3>
@@ -1806,7 +1798,7 @@ const SuiviProduction = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Footer */}
         <div className="mt-6 flex items-center justify-between">
           <div className="flex items-center space-x-2 text-gray-500">

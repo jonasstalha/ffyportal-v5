@@ -68,8 +68,7 @@ interface ReceptionDocument {
 
 interface ReceptionRow {
   date: string;
-  numLot?: string;
-  interne?: string;
+  nlotInterne?: string; // Changed from numLot/interne to match Firebase structure
   matricule: string;
   chauffeur: string;
   poidsNetUsine: string;
@@ -85,7 +84,7 @@ interface ReceptionRow {
 
 const ReceptionApp = () => {
   const [activeTab, setActiveTab] = useState<'conv' | 'bio'>('conv');
-  const [allReceptions, setAllReceptions] = useState<ReceptionDocument[]>([]); // Tous les documents de réception
+  const [allReceptions, setAllReceptions] = useState<ReceptionDocument[]>([]);
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -111,23 +110,29 @@ const ReceptionApp = () => {
 
   // Transformer toutes les données en format plat pour l'affichage
   const allReceptionData: ReceptionEntry[] = allReceptions.flatMap(doc => 
-    doc.rows.map((row, index) => ({
-      id: row.id || `${doc.id}-${index}`,
-      date: row.date,
-      numLot: row.numLot || '',
-      interne: row.interne || '',
-      matricule: row.matricule,
-      chauffeur: row.chauffeur,
-      poidsNetUsine: parseFloat(row.poidsNetUsine) || 0,
-      dechet: parseFloat(row.dechet) || 0,
-      feurte: parseFloat(row.feurte) || 0,
-      poidsNetTicket: parseFloat(row.poidsNetTicket) || 0,
-      ecart: parseFloat(row.ecart) || 0,
-      lieu: row.leLieu || row.lieu || '',
-      variete: row.variete,
-      category: doc.category,
-      receptionId: doc.id
-    }))
+    doc.rows.map((row, index) => {
+      // Handle nlotInterne field - split it into numLot and interne for display
+      const nlotInterne = row.nlotInterne || '';
+      const [numLot = '', interne = ''] = nlotInterne.split('/').map(part => part.trim());
+      
+      return {
+        id: row.id || `${doc.id}-${index}`,
+        date: row.date,
+        numLot,
+        interne,
+        matricule: row.matricule,
+        chauffeur: row.chauffeur,
+        poidsNetUsine: parseFloat(row.poidsNetUsine) || 0,
+        dechet: parseFloat(row.dechet) || 0,
+        feurte: parseFloat(row.feurte) || 0,
+        poidsNetTicket: parseFloat(row.poidsNetTicket) || 0,
+        ecart: parseFloat(row.ecart) || 0,
+        lieu: row.leLieu || row.lieu || '',
+        variete: row.variete,
+        category: doc.category,
+        receptionId: doc.id
+      };
+    })
   );
 
   const currentData = activeTab === 'conv' 
@@ -209,7 +214,7 @@ const ReceptionApp = () => {
 
   // Create new reception
   const createNewReception = async () => {
-    const category = activeTab;
+    const category = activeTab === 'conv' ? 'conventionnel' : 'biologique';
     
     const newReception: ReceptionDocument = {
       id: '',
@@ -245,23 +250,6 @@ const ReceptionApp = () => {
     }
   };
 
-  // Calculate totals for reception
-  const calculateReceptionTotals = (rows: ReceptionRow[]) => {
-    return rows.reduce((totals, row) => ({
-      poidsNetUsine: totals.poidsNetUsine + (parseFloat(row.poidsNetUsine) || 0),
-      dechet: totals.dechet + (parseFloat(row.dechet) || 0),
-      feurte: totals.feurte + (parseFloat(row.feurte) || 0),
-      poidsNetTicket: totals.poidsNetTicket + (parseFloat(row.poidsNetTicket) || 0),
-      ecart: totals.ecart + (parseFloat(row.ecart) || 0)
-    }), {
-      poidsNetUsine: 0,
-      dechet: 0,
-      feurte: 0,
-      poidsNetTicket: 0,
-      ecart: 0
-    });
-  };
-
   const calculateEcart = (poidsUsine: number, poidsTicket: number): number => {
     return poidsUsine - poidsTicket;
   };
@@ -288,7 +276,7 @@ const ReceptionApp = () => {
     const newErrors: FormErrors = {};
     
     if (!formData.date) newErrors.date = 'Date requise';
-    if (!formData.interne) newErrors.interne = 'INTERNE requis';
+    if (!formData.numLot && !formData.interne) newErrors.interne = 'N° LOT ou INTERNE requis';
     if (!formData.matricule) newErrors.matricule = 'Matricule requis';
     if (!formData.chauffeur) newErrors.chauffeur = 'Chauffeur requis';
     if (!formData.poidsNetUsine) newErrors.poidsNetUsine = 'Poids Net Usine requis';
@@ -330,10 +318,12 @@ const ReceptionApp = () => {
       return;
     }
 
+    // Combine numLot and interne into nlotInterne for Firebase
+    const nlotInterne = `${formData.numLot}${formData.interne ? ` / ${formData.interne}` : ''}`;
+
     const newEntry: ReceptionRow = {
       date: formData.date,
-      numLot: formData.numLot,
-      interne: formData.interne,
+      nlotInterne: nlotInterne,
       matricule: formData.matricule,
       chauffeur: formData.chauffeur,
       poidsNetUsine: formData.poidsNetUsine,
@@ -390,10 +380,12 @@ const ReceptionApp = () => {
       return;
     }
 
+    // Combine numLot and interne into nlotInterne for Firebase
+    const nlotInterne = `${formData.numLot}${formData.interne ? ` / ${formData.interne}` : ''}`;
+
     const updatedEntry: ReceptionRow = {
       date: formData.date,
-      numLot: formData.numLot,
-      interne: formData.interne,
+      nlotInterne: nlotInterne,
       matricule: formData.matricule,
       chauffeur: formData.chauffeur,
       poidsNetUsine: formData.poidsNetUsine,
@@ -544,7 +536,7 @@ const ReceptionApp = () => {
       const tableData = data.map((item, index) => [
         (index + 1).toString(),
         item.date,
-        `${item.numLot} / ${item.interne}`,
+        `${item.numLot}${item.interne ? ` / ${item.interne}` : ''}`,
         item.matricule,
         item.chauffeur,
         item.poidsNetUsine.toString(),
@@ -633,7 +625,7 @@ const ReceptionApp = () => {
       headers.join(','),
       ...data.map(item => [
         item.date,
-        `"${item.numLot} / ${item.interne}"`,
+        `"${item.numLot}${item.interne ? ` / ${item.interne}` : ''}"`,
         `"${item.matricule}"`,
         `"${item.chauffeur}"`,
         item.poidsNetUsine,
@@ -675,8 +667,6 @@ const ReceptionApp = () => {
             📋 Réception Avocat HASS 2024/2025
           </h1>
           <p className="text-gray-600">Système de Gestion Complet des Réceptions - Données en temps réel</p>
-          
-
         </div>
 
         <div className="bg-white rounded-lg shadow-xl p-6">
@@ -822,9 +812,7 @@ const ReceptionApp = () => {
                       value={formData.interne}
                       onChange={handleInputChange}
                       placeholder="INTERNE"
-                      className={`flex-1 px-3 py-2 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        errors.interne ? 'border-red-500' : 'border-gray-300'
-                      }`}
+                      className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   {errors.interne && <p className="text-red-500 text-xs mt-1">{errors.interne}</p>}
@@ -991,7 +979,7 @@ const ReceptionApp = () => {
                     <tr key={item.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition`}>
                       <td className="border border-gray-300 px-3 py-2 text-sm">{item.date}</td>
                       <td className="border border-gray-300 px-3 py-2 text-sm font-semibold">
-                        {item.numLot} / {item.interne}
+                        {item.numLot}{item.interne ? ` / ${item.interne}` : ''}
                       </td>
                       <td className="border border-gray-300 px-3 py-2 text-sm">{item.matricule}</td>
                       <td className="border border-gray-300 px-3 py-2 text-sm">{item.chauffeur}</td>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import logoUrl from '../../../assets/icon.png';
-import { FilePlus, Package, Plus, RefreshCw, Save, Trash2, Copy } from 'lucide-react';
+import { FilePlus, Package, Plus, RefreshCw, Save, Trash2, Copy, Archive, Download, Eye, Search } from 'lucide-react';
 import { archiveReceptionControl, deleteReceptionArchive, getReceptionArchives, saveReceptionControl } from '../../lib/receptionControlService';
 
 // Data model for avocado quality control
@@ -100,8 +100,10 @@ const ControleReception: React.FC = () => {
   ]);
   const [currentLotId, setCurrentLotId] = useState<string>('1');
   const [archives, setArchives] = useState<QualityControlLot[]>([]);
+  const [filteredArchives, setFilteredArchives] = useState<QualityControlLot[]>([]);
   const [loadingArchives, setLoadingArchives] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Load archives from Firebase on mount
   useEffect(() => {
@@ -119,6 +121,7 @@ const ControleReception: React.FC = () => {
           updatedAt: new Date(it.updatedAt),
         }));
         setArchives(mapped);
+        setFilteredArchives(mapped);
       } catch (e) {
         console.error('Failed to load archives', e);
       } finally {
@@ -127,6 +130,20 @@ const ControleReception: React.FC = () => {
     };
     load();
   }, []);
+
+  // Filter archives based on search term
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredArchives(archives);
+    } else {
+      const filtered = archives.filter(archive => 
+        archive.data.header.receptionBonNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        archive.lotNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        archive.data.header.provider?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredArchives(filtered);
+    }
+  }, [searchTerm, archives]);
 
   const currentLot = useMemo(() => lots.find(l => l.id === currentLotId), [lots, currentLotId]);
 
@@ -236,6 +253,7 @@ const ControleReception: React.FC = () => {
         updatedAt: new Date(),
       };
       setArchives([archivedLot, ...archives]);
+      setFilteredArchives([archivedLot, ...archives]);
       alert('Fiche archivée sur Firebase');
     } catch (e) {
       console.error(e);
@@ -255,21 +273,23 @@ const ControleReception: React.FC = () => {
     if (!confirm('Supprimer cette archive ?')) return;
     try {
       await deleteReceptionArchive(archiveId);
-      setArchives(archives.filter(a => a.id !== archiveId));
+      const newArchives = archives.filter(a => a.id !== archiveId);
+      setArchives(newArchives);
+      setFilteredArchives(newArchives);
     } catch (e) {
       console.error(e);
       alert('Suppression impossible');
     }
   };
 
-const generatePDF = async () => {
+  const generatePDF = async () => {
     if (!currentLot) return;
 
     const jsPDFClass = (await import('jspdf')).default;
     const autoTable = (await import('jspdf-autotable')).default as any;
     const doc = new jsPDFClass({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-    const margin = 6 ;
+    const margin = 6;
     const pageWidth = doc.internal.pageSize.getWidth();
     const contentWidth = pageWidth - margin * 2;
     doc.setLineHeightFactor(1.0);
@@ -314,7 +334,6 @@ const generatePDF = async () => {
     doc.text(`Version : ${currentLot.data.header.version}`, rightX0 + 2, margin + rowH * 2 - 2);
     doc.text(`Date : ${currentLot.data.header.date}`, rightX0 + 2, margin + rowH * 3 - 2);
     // Logo
-    // Helper to convert imported asset URL to data URL (robust)
     const toDataURL = async (url: string): Promise<string> => {
       try {
         if (typeof url === 'string' && url.startsWith('data:')) return url;
@@ -377,7 +396,6 @@ const generatePDF = async () => {
           throw new Error('empty data URL');
         }
       } catch (addErr) {
-        // fallback: don't crash PDF generation
         console.warn('Failed to add logo to PDF (addImage):', addErr);
       }
     } catch (e) {
@@ -387,93 +405,127 @@ const generatePDF = async () => {
     // Table body matching page
     const rec = currentLot.data.header;
     const qc = currentLot.data.qualityChecks;
-    const widths = [25, 25, 15, 15, 15, 10]; // adjust anytime
+    
+    // FIX: Use actual weight values from currentLot data instead of empty strings
     autoTable(doc, {
       startY: margin + headerH + 4,
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 1.5, right: 2, bottom: 1.5, left: 2 }, lineColor: colors.border, lineWidth: 0.3, textColor: colors.text },
+      styles: { 
+        font: 'helvetica', 
+        fontSize: 9, 
+        cellPadding: { top: 1.5, right: 2, bottom: 1.5, left: 2 }, 
+        lineColor: colors.border, 
+        lineWidth: 0.3, 
+        textColor: colors.text 
+      },
       margin: { left: margin, right: margin, bottom: 30 },
       theme: 'grid',
       tableWidth: contentWidth,
-       // This is the first columnStyles block, which is immediately overwritten
-       columnStyles: {
-         0: { cellWidth: widths[0] },
-         1: { cellWidth: widths[1] },
-         2: { cellWidth: widths[2] },
-         3: { cellWidth: widths[3] },
-         4: { cellWidth: widths[4] },
-         5: { cellWidth: widths[5] },
-       },
+      columnStyles: {
+        0: { cellWidth: contentWidth * 0.25 },
+        1: { cellWidth: contentWidth * 0.15 },
+        2: { cellWidth: contentWidth * 0.15 },
+        3: { cellWidth: contentWidth * 0.15 },
+        4: { cellWidth: contentWidth * 0.15 },
+        5: { cellWidth: contentWidth * 0.15 },
+      },
       body: [
         [
-          { content: 'Date', styles: { fillColor: colors.lime300, fontStyle: 'bold' }, cellWidth: 20 },
-          { content: rec.deliveryDate || '', cellWidth: 40 },
-          { content: 'Gamme de produit :', styles: { fillColor: colors.lime300, fontStyle: 'bold' }, cellWidth: 20 },
-          { content: `${rec.productRange || ''} ${rec.bio ? '[BIO]' : (rec.conventionnel ? '[Conventionnel]' : '')}`, cellWidth: 30 },
-          { content: rec.provider || '', cellWidth: 20 },
-          { content: '1 Caisse (23KG) / 12palette', styles: { fillColor: colors.lime300, fontStyle: 'bold' }, cellWidth: 40 },
+          { content: 'Date', styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
+          { content: rec.deliveryDate || '' },
+          { content: 'Gamme de produit :', styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
+          { content: `${rec.productRange || ''} ${rec.bio ? '[BIO]' : (rec.conventionnel ? '[Conventionnel]' : '')}` },
+          { content: rec.provider || '' },
+          { content: '1 Caisse (23KG) / 12palette', styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
         ],
 
-        [{ content: 'N° de Bon de livraison', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.deliveryBonNumber || '', colSpan: 6 }],
-        [{ content: 'N° de bon de réception', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.receptionBonNumber || '', colSpan: 6 }],
-        [{ content: 'Heure de réception', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.receptionTime || '', colSpan: 6 }],
-        [{ content: 'Etats des caisses (C/NC)', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.boxState || '', colSpan: 6 }],
-        [{ content: 'Matricule', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.matricule || '', colSpan: 6 }],
-        [{ content: 'Variété', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.variety || '', colSpan: 6 }],
-        [{ content: 'Producteur', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.producer || '', colSpan: 6 }],
-        [{ content: 'Contrôle qualité de états Camion : Odeur ; corps étranger ; nettoyage. (C/NC)', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.truckQuality || '', colSpan: 6 }],
-        [{ content: 'Nombre total de palettes', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.totalPallets || '', colSpan: 6 }],
-        [{ content: 'Poids NET', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.netWeight || '', colSpan: 6 }],
-        [{ content: 'N° de lot du produit', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.productLotNumber || '', colSpan: 6 }],
+        [{ content: 'N° de Bon de livraison', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.deliveryBonNumber || '', colSpan: 5 }],
+        [{ content: 'N° de bon de réception', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.receptionBonNumber || '', colSpan: 5 }],
+        [{ content: 'Heure de réception', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.receptionTime || '', colSpan: 5 }],
+        [{ content: 'Etats des caisses (C/NC)', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.boxState || '', colSpan: 5 }],
+        [{ content: 'Matricule', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.matricule || '', colSpan: 5 }],
+        [{ content: 'Variété', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.variety || '', colSpan: 5 }],
+        [{ content: 'Producteur', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.producer || '', colSpan: 5 }],
+        [{ content: 'Contrôle qualité de états Camion : Odeur ; corps étranger ; nettoyage. (C/NC)', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.truckQuality || '', colSpan: 5 }],
+        [{ content: 'Nombre total de palettes', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.totalPallets || '', colSpan: 5 }],
+        [{ content: 'Poids NET', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.netWeight || '', colSpan: 5 }],
+        [{ content: 'N° de lot du produit', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.productLotNumber || '', colSpan: 5 }],
 
-        [{ content: 'Nbr Fruit avec trace de maladie', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
-        { content: 'Nbr de fruits (max 10u)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '', colSpan: 3 }],
-        [{ content: qc.diseaseTraces.count || '' }, { content: qc.diseaseTraces.weight || '' }, { content: qc.diseaseTraces.percentage || '' }, { content: '', colSpan: 3 }],
+        // Quality checks with FIXED weight values
+        [
+          { content: 'Nbr Fruit avec trace de maladie', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
+          { content: 'Nbr de fruits (max 10u)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '', colSpan: 2 }
+        ],
+        [
+          { content: qc.diseaseTraces.count || '' },
+          { content: qc.diseaseTraces.weight || '' }, // FIX: Now shows actual value
+          { content: qc.diseaseTraces.percentage || '' },
+          { content: '', colSpan: 2 }
+        ],
 
-        [{ content: 'Nbr fruit murs', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
-        { content: 'Nbr de fruits (max 0u)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '', colSpan: 3 }],
-        [{ content: qc.ripeFruit.count || '' }, { content: qc.ripeFruit.weight || '' }, { content: qc.ripeFruit.percentage || '' }, { content: '', colSpan: 3 }],
+        [
+          { content: 'Nbr fruit murs', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
+          { content: 'Nbr de fruits (max 0u)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '', colSpan: 2 }
+        ],
+        [
+          { content: qc.ripeFruit.count || '' },
+          { content: qc.ripeFruit.weight || '' }, // FIX: Now shows actual value
+          { content: qc.ripeFruit.percentage || '' },
+          { content: '', colSpan: 2 }
+        ],
 
-        [{ content: 'Nbr fruit Terreux', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
-        { content: 'Nbr de fruits (max 8u)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '', colSpan: 3 }],
-        [{ content: qc.dirtyFruit.count || '' }, { content: qc.dirtyFruit.weight || '' }, { content: qc.dirtyFruit.percentage || '' }, { content: '', colSpan: 3 }],
+        [
+          { content: 'Nbr fruit Terreux', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
+          { content: 'Nbr de fruits (max 8u)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '', colSpan: 2 }
+        ],
+        [
+          { content: qc.dirtyFruit.count || '' },
+          { content: qc.dirtyFruit.weight || '' }, // FIX: Now shows actual value
+          { content: qc.dirtyFruit.percentage || '' },
+          { content: '', colSpan: 2 }
+        ],
 
-        [{ content: 'Epiderme et brulures de soleil', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
-        { content: 'Nbr de fruits (max 6cm²)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '', colSpan: 3 }],
-        [{ content: qc.sunBurns.count || '' }, { content: qc.sunBurns.weight || '' }, { content: qc.sunBurns.percentage || '' }, { content: '', colSpan: 3 }],
+        [
+          { content: 'Epiderme et brulures de soleil', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
+          { content: 'Nbr de fruits (max 6cm²)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '', colSpan: 2 }
+        ],
+        [
+          { content: qc.sunBurns.count || '' },
+          { content: qc.sunBurns.weight || '' }, // FIX: Now shows actual value
+          { content: qc.sunBurns.percentage || '' },
+          { content: '', colSpan: 2 }
+        ],
 
-        [{ content: 'Nbr fruit Sans pédoncule', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
-        { content: 'Nbr de fruits', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
-        { content: '', colSpan: 3 }],
-        [{ content: qc.withoutStem.count || '' }, { content: qc.withoutStem.weight || '' }, { content: qc.withoutStem.percentage || '' }, { content: '', colSpan: 3 }],
+        [
+          { content: 'Nbr fruit Sans pédoncule', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
+          { content: 'Nbr de fruits', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: 'Poids', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '%', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
+          { content: '', colSpan: 2 }
+        ],
+        [
+          { content: qc.withoutStem.count || '' },
+          { content: qc.withoutStem.weight || '' }, // FIX: Now shows actual value
+          { content: qc.withoutStem.percentage || '' },
+          { content: '', colSpan: 2 }
+        ],
 
-        [{ content: 'Totalité des défauts %', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.totalDefects || '', colSpan: 6 }],
-        [{ content: 'Couleur C/NC', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.color || '', colSpan: 6 }],
-        [{ content: 'Odeur C / NC', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.odor || '', colSpan: 6 }],
-        [{ content: 'Décision + Action', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.decision || '', colSpan: 6 }],
+        [{ content: 'Totalité des défauts %', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.totalDefects || '', colSpan: 5 }],
+        [{ content: 'Couleur C/NC', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.color || '', colSpan: 5 }],
+        [{ content: 'Odeur C / NC', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.odor || '', colSpan: 5 }],
+        [{ content: 'Décision + Action', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: currentLot.data.decision || '', colSpan: 5 }],
       ],
-      // FIX: Adjust column widths to fit contentWidth (198mm)
-      columnStyles: {
-        0: { cellWidth: contentWidth / 6 }, // 33mm
-        1: { cellWidth: contentWidth / 6 }, // 33mm
-        2: { cellWidth: contentWidth / 6 }, // 33mm
-        3: { cellWidth: contentWidth / 6 }, // 33mm
-        4: { cellWidth: contentWidth / 6 }, // 33mm
-        5: { cellWidth: contentWidth / 6 }, // 33mm
-      },
     });
 
     // Notes and visa
@@ -512,32 +564,6 @@ const generatePDF = async () => {
     doc.save(fileName);
   };
 
-  const calculatePercentages = (checks: QualityControlData['qualityChecks'], totalWeight: number) => {
-    const updatedChecks = { ...checks };
-
-    Object.keys(updatedChecks).forEach((key) => {
-      const check = updatedChecks[key as keyof QualityControlData['qualityChecks']];
-      const weight = parseFloat(check.weight) || 0;
-      check.percentage = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(2) : '0.00';
-    });
-
-    return updatedChecks;
-  };
-
-  const updateQualityChecks = (key: keyof QualityControlData['qualityChecks'], field: 'count' | 'weight', value: string) => {
-    setLots((prevLots) => {
-      const updatedLots = [...prevLots];
-      const currentLot = updatedLots[0]; // Assuming single lot for simplicity
-      const totalWeight = parseFloat(currentLot.data.header.netWeight) || 0;
-
-      currentLot.data.qualityChecks[key][field] = value;
-      currentLot.data.qualityChecks = calculatePercentages(currentLot.data.qualityChecks, totalWeight);
-
-      return updatedLots;
-    });
-  };
-
-  // Compute total defects as sum of all percentage fields
   const computeTotalDefects = (qc: QualityControlData['qualityChecks']): string => {
     const keys = ['diseaseTraces', 'ripeFruit', 'dirtyFruit', 'sunBurns', 'withoutStem'] as const;
     const sum = keys.reduce((acc, k) => acc + (parseFloat(qc[k].percentage) || 0), 0);
@@ -860,208 +886,213 @@ const generatePDF = async () => {
                     </td>
                   </tr>
 
-{/* Quality rows */}
-{/* Fruit avec trace de maladie */}
-<tr>
-  <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
-    Nbr Fruit avec trace de maladie
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    Nbr de fruits<br />(max 10u)
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    Poids
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    %
-  </td>
-  <td className="border border-black p-1" colSpan={3}></td>
-</tr>
-<tr>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.diseaseTraces.count}
-      onChange={(e) =>
-        updateCurrentLot({
-          qualityChecks: {
-            ...currentLot.data.qualityChecks,
-            diseaseTraces: {
-              ...currentLot.data.qualityChecks.diseaseTraces,
-              count: e.target.value,
-            },
-          },
-        })
-      }
-      className="w-full text-xs border-none outline-none"
-    />
-  </td>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.diseaseTraces.weight}
-      onChange={(e) => {
-        const weight = parseFloat(e.target.value) || 0;
-        const percentage = ((weight / 230)).toFixed(2);
-        const newQC = {
-          ...currentLot.data.qualityChecks,
-          diseaseTraces: {
-            ...currentLot.data.qualityChecks.diseaseTraces,
-            weight,
-            percentage,
-          },
-        };
-        const total = computeTotalDefects(newQC);
-        updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
-      }}
-      className="w-full text-xs border-none outline-none"
-    />
-  </td>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.diseaseTraces.percentage}
-      readOnly
-      className="w-full text-xs border-none outline-none bg-gray-100"
-    />
-  </td>
-  <td className="border border-black p-1" colSpan={3}></td>
-</tr>
+                  {/* Quality rows */}
+                  {/* Fruit avec trace de maladie */}
+                  <tr>
+                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
+                      Nbr Fruit avec trace de maladie
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      Nbr de fruits<br />(max 10u)
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      Poids
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      %
+                    </td>
+                    <td className="border border-black p-1" colSpan={3}></td>
+                  </tr>
+                  <tr>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.diseaseTraces.count}
+                        onChange={(e) =>
+                          updateCurrentLot({
+                            qualityChecks: {
+                              ...currentLot.data.qualityChecks,
+                              diseaseTraces: {
+                                ...currentLot.data.qualityChecks.diseaseTraces,
+                                count: e.target.value,
+                              },
+                            },
+                          })
+                        }
+                        className="w-full text-xs border-none outline-none"
+                      />
+                    </td>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.diseaseTraces.weight}
+                        onChange={(e) => {
+                          const weight = e.target.value;
+                          const percentage = currentLot.data.header.netWeight ? 
+                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
+                          
+                          const newQC = {
+                            ...currentLot.data.qualityChecks,
+                            diseaseTraces: {
+                              ...currentLot.data.qualityChecks.diseaseTraces,
+                              weight,
+                              percentage,
+                            },
+                          };
+                          const total = computeTotalDefects(newQC);
+                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                        }}
+                        className="w-full text-xs border-none outline-none"
+                      />
+                    </td>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.diseaseTraces.percentage}
+                        readOnly
+                        className="w-full text-xs border-none outline-none bg-gray-100"
+                      />
+                    </td>
+                    <td className="border border-black p-1" colSpan={3}></td>
+                  </tr>
 
-{/* Nbr fruit murs */}
-<tr>
-  <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
-    Nbr fruit murs
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    Nbr de fruits<br />(max 0u)
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    Poids
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    %
-  </td>
-  <td className="border border-black p-1" colSpan={3}></td>
-</tr>
-<tr>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.ripeFruit.count}
-      onChange={(e) =>
-        updateCurrentLot({
-          qualityChecks: {
-            ...currentLot.data.qualityChecks,
-            ripeFruit: {
-              ...currentLot.data.qualityChecks.ripeFruit,
-              count: e.target.value,
-            },
-          },
-        })
-      }
-      className="w-full text-xs border-none outline-none"
-    />
-  </td>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.ripeFruit.weight}
-      onChange={(e) => {
-        const weight = parseFloat(e.target.value) || 0;
-        const percentage = ((weight / 230)).toFixed(2);
-        const newQC = {
-          ...currentLot.data.qualityChecks,
-          ripeFruit: {
-            ...currentLot.data.qualityChecks.ripeFruit,
-            weight,
-            percentage,
-          },
-        };
-        const total = computeTotalDefects(newQC);
-        updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
-      }}
-      className="w-full text-xs border-none outline-none"
-    />
-  </td>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.ripeFruit.percentage}
-      readOnly
-      className="w-full text-xs border-none outline-none bg-gray-100"
-    />
-  </td>
-  <td className="border border-black p-1" colSpan={3}></td>
-</tr>
+                  {/* Nbr fruit murs */}
+                  <tr>
+                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
+                      Nbr fruit murs
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      Nbr de fruits<br />(max 0u)
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      Poids
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      %
+                    </td>
+                    <td className="border border-black p-1" colSpan={3}></td>
+                  </tr>
+                  <tr>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.ripeFruit.count}
+                        onChange={(e) =>
+                          updateCurrentLot({
+                            qualityChecks: {
+                              ...currentLot.data.qualityChecks,
+                              ripeFruit: {
+                                ...currentLot.data.qualityChecks.ripeFruit,
+                                count: e.target.value,
+                              },
+                            },
+                          })
+                        }
+                        className="w-full text-xs border-none outline-none"
+                      />
+                    </td>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.ripeFruit.weight}
+                        onChange={(e) => {
+                          const weight = e.target.value;
+                          const percentage = currentLot.data.header.netWeight ? 
+                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
+                          
+                          const newQC = {
+                            ...currentLot.data.qualityChecks,
+                            ripeFruit: {
+                              ...currentLot.data.qualityChecks.ripeFruit,
+                              weight,
+                              percentage,
+                            },
+                          };
+                          const total = computeTotalDefects(newQC);
+                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                        }}
+                        className="w-full text-xs border-none outline-none"
+                      />
+                    </td>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.ripeFruit.percentage}
+                        readOnly
+                        className="w-full text-xs border-none outline-none bg-gray-100"
+                      />
+                    </td>
+                    <td className="border border-black p-1" colSpan={3}></td>
+                  </tr>
 
-{/* Nbr fruit Terreux */}
-<tr>
-  <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
-    Nbr fruit Terreux
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    Nbr de fruits<br />(max 8u)
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    Poids
-  </td>
-  <td className="bg-lime-200 border border-black p-1 font-bold text-center">
-    %
-  </td>
-  <td className="border border-black p-1" colSpan={3}></td>
-</tr>
-<tr>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.dirtyFruit.count}
-      onChange={(e) =>
-        updateCurrentLot({
-          qualityChecks: {
-            ...currentLot.data.qualityChecks,
-            dirtyFruit: {
-              ...currentLot.data.qualityChecks.dirtyFruit,
-              count: e.target.value,
-            },
-          },
-        })
-      }
-      className="w-full text-xs border-none outline-none"
-    />
-  </td>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.dirtyFruit.weight}
-      onChange={(e) => {
-        const weight = parseFloat(e.target.value) || 0;
-        const percentage = ((weight / 230)).toFixed(2);
-        const newQC = {
-          ...currentLot.data.qualityChecks,
-          dirtyFruit: {
-            ...currentLot.data.qualityChecks.dirtyFruit,
-            weight,
-            percentage,
-          },
-        };
-        const total = computeTotalDefects(newQC);
-        updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
-      }}
-      className="w-full text-xs border-none outline-none"
-    />
-  </td>
-  <td className="border border-black p-1">
-    <input
-      type="text"
-      value={currentLot.data.qualityChecks.dirtyFruit.percentage}
-      readOnly
-      className="w-full text-xs border-none outline-none bg-gray-100"
-    />
-  </td>
-  <td className="border border-black p-1" colSpan={3}></td>
-</tr>
- 
+                  {/* Nbr fruit Terreux */}
+                  <tr>
+                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
+                      Nbr fruit Terreux
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      Nbr de fruits<br />(max 8u)
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      Poids
+                    </td>
+                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                      %
+                    </td>
+                    <td className="border border-black p-1" colSpan={3}></td>
+                  </tr>
+                  <tr>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.dirtyFruit.count}
+                        onChange={(e) =>
+                          updateCurrentLot({
+                            qualityChecks: {
+                              ...currentLot.data.qualityChecks,
+                              dirtyFruit: {
+                                ...currentLot.data.qualityChecks.dirtyFruit,
+                                count: e.target.value,
+                              },
+                            },
+                          })
+                        }
+                        className="w-full text-xs border-none outline-none"
+                      />
+                    </td>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.dirtyFruit.weight}
+                        onChange={(e) => {
+                          const weight = e.target.value;
+                          const percentage = currentLot.data.header.netWeight ? 
+                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
+                          
+                          const newQC = {
+                            ...currentLot.data.qualityChecks,
+                            dirtyFruit: {
+                              ...currentLot.data.qualityChecks.dirtyFruit,
+                              weight,
+                              percentage,
+                            },
+                          };
+                          const total = computeTotalDefects(newQC);
+                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                        }}
+                        className="w-full text-xs border-none outline-none"
+                      />
+                    </td>
+                    <td className="border border-black p-1">
+                      <input
+                        type="text"
+                        value={currentLot.data.qualityChecks.dirtyFruit.percentage}
+                        readOnly
+                        className="w-full text-xs border-none outline-none bg-gray-100"
+                      />
+                    </td>
+                    <td className="border border-black p-1" colSpan={3}></td>
+                  </tr>
 
                   {/* Epiderme et brulures de soleil */}
                   <tr>
@@ -1085,8 +1116,10 @@ const generatePDF = async () => {
                         type="text"
                         value={currentLot.data.qualityChecks.sunBurns.weight}
                         onChange={(e) => {
-                          const weight = parseFloat(e.target.value) || 0;
-                          const percentage = ((weight / 230)).toFixed(2);
+                          const weight = e.target.value;
+                          const percentage = currentLot.data.header.netWeight ? 
+                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
+                          
                           const newQC = {
                             ...currentLot.data.qualityChecks,
                             sunBurns: {
@@ -1137,8 +1170,10 @@ const generatePDF = async () => {
                         type="text"
                         value={currentLot.data.qualityChecks.withoutStem.weight}
                         onChange={(e) => {
-                          const weight = parseFloat(e.target.value) || 0;
-                          const percentage = ((weight / 230)).toFixed(2);
+                          const weight = e.target.value;
+                          const percentage = currentLot.data.header.netWeight ? 
+                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
+                          
                           const newQC = {
                             ...currentLot.data.qualityChecks,
                             withoutStem: {
@@ -1254,54 +1289,121 @@ const generatePDF = async () => {
         </div>
       </div>
 
-      {/* Archives Section */}
+      {/* Enhanced Archives Section */}
       <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-xl mt-6 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">Archives - Fiches de Contrôle Réception</h2>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <Archive className="text-blue-600" size={24} />
+              Archives - Bon de Réception
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">Les archives sont des copies figées de vos fiches de contrôle. Utilisez Archiver pour sauvegarder une fiche.</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-gray-500">
+              {filteredArchives.length} archive{filteredArchives.length !== 1 ? 's' : ''} trouvée{filteredArchives.length !== 1 ? 's' : ''}
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="text"
+                placeholder="Rechercher par N° bon réception..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none w-64 text-sm"
+              />
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Les archives sont des copies figées de vos fiches de contrôle. Utilisez Archiver pour sauvegarder une fiche.</p>
 
         {loadingArchives ? (
-          <div className="text-gray-500 text-center py-8">Chargement des archives...</div>
-        ) : archives.length === 0 ? (
-          <div className="text-gray-500 text-center py-8">Aucune archive pour le moment.</div>
+          <div className="text-gray-500 text-center py-12">
+            <RefreshCw className="animate-spin mx-auto mb-3" size={32} />
+            <p>Chargement des archives...</p>
+          </div>
+        ) : filteredArchives.length === 0 ? (
+          <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
+            <Archive className="mx-auto mb-3 text-gray-400" size={48} />
+            <h3 className="text-lg font-medium text-gray-600 mb-2">
+              {searchTerm ? 'Aucune archive trouvée' : 'Aucune archive pour le moment'}
+            </h3>
+            <p className="text-gray-500 mb-4">
+              {searchTerm ? 'Aucun résultat pour votre recherche.' : 'Les fiches que vous archivez apparaîtront ici.'}
+            </p>
+            <button 
+              onClick={saveToArchive}
+              className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Save size={16} />
+              Archiver la fiche actuelle
+            </button>
+          </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {archives.map((archive) => (
-              <div key={archive.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="font-medium">{archive.lotNumber}</div>
-                  <span className={`px-2 py-1 text-xs rounded-full ${archive.status === 'termine' ? 'bg-green-200 text-green-800' :
-                    archive.status === 'en_cours' ? 'bg-yellow-200 text-yellow-800' :
-                      'bg-gray-200 text-gray-600'
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredArchives.map((archive) => (
+              <div key={archive.id} className="border-2 border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-200 bg-white hover:border-blue-200 group">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-lg text-gray-800 mb-2 group-hover:text-blue-600 transition-colors">
+                      {archive.data.header.receptionBonNumber || 'Sans N° bon réception'}
+                    </div>
+                    <div className="text-gray-600 mb-2 truncate">
+                      {archive.lotNumber}
+                    </div>
+                    <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                      archive.status === 'termine' ? 'bg-green-100 text-green-800 border border-green-200' :
+                      archive.status === 'en_cours' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
+                      'bg-gray-100 text-gray-600 border border-gray-200'
                     }`}>
-                    {archive.status}
-                  </span>
+                      {archive.status}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-gray-500 bg-gray-50 rounded-lg px-2 py-1">
+                    <div>Créé le</div>
+                    <div>{archive.createdAt.toLocaleDateString('fr-FR')}</div>
+                  </div>
                 </div>
 
-                <div className="text-sm text-gray-600 mb-3">
-                  <div>Prestataire: {archive.data.header.provider}</div>
-                  <div>Variété: {archive.data.header.variety}</div>
-                  <div>Date: {archive.data.header.deliveryDate}</div>
+                <div className="space-y-2 mb-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Prestataire:</span>
+                    <span className="font-medium text-gray-800 truncate ml-2 text-right">
+                      {archive.data.header.provider || 'Non renseigné'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Variété:</span>
+                    <span className="font-medium text-gray-800">{archive.data.header.variety || 'Non renseigné'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Date réception:</span>
+                    <span className="font-medium text-gray-800">{archive.data.header.deliveryDate || 'Non renseigné'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Poids NET:</span>
+                    <span className="font-medium text-gray-800">{archive.data.header.netWeight || 'Non renseigné'}</span>
+                  </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 pt-3 border-t border-gray-100">
                   <button
                     onClick={() => loadFromArchive(archive)}
-                    className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                   >
+                    <Eye size={16} />
                     Charger
                   </button>
                   <button
                     onClick={() => deleteArchive(archive.id)}
-                    className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                    className="flex items-center justify-center px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    title="Supprimer"
                   >
-                    Supprimer
+                    <Trash2 size={16} />
                   </button>
                 </div>
 
-                <div className="text-xs text-gray-400 mt-2">
-                  Archivé le: {archive.updatedAt.toLocaleDateString('fr-FR')}
+                <div className="text-xs text-gray-400 mt-3 text-center">
+                  Dernière modification: {archive.updatedAt.toLocaleDateString('fr-FR')} à {archive.updatedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
             ))}

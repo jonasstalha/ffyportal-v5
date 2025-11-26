@@ -47,7 +47,7 @@ type FormData = {
     type220: number;
     type264: number;
     type90: number;
-    type210: number;
+    type108: number;
   };
 };
 
@@ -99,7 +99,7 @@ const PackingListManager = () => {
           caissesPerPalette: i % 2 === 0 ? '264' : '220'
         })),
         calibreSummary: {},
-        palletTypes: { type220: 0, type264: 0, type90: 0, type210: 0 }
+        palletTypes: { type220: 0, type264: 0, type90: 0, type108: 0 }
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -168,7 +168,7 @@ const PackingListManager = () => {
     const calculateRealSummary = (rows: any[] = []) => {
       // aggregates per calibre and pallet-types counts
       const calibreSummary: Record<string, { palettes: number; caisses: number; quantity?: number; caissesPerPalette?: number }> = {};
-      const palletTypes = { type220: 0, type264: 0, type90: 0, type210: 0 };
+      const palletTypes = { type220: 0, type264: 0, type90: 0, type108: 0 };
   
       let totalNet = 0;
       let totalBrut = 0;
@@ -211,7 +211,7 @@ const PackingListManager = () => {
         if (caissesPerPalette === 220) palletTypes.type220 += palettes;
         else if (caissesPerPalette === 264) palletTypes.type264 += palettes;
         else if (caissesPerPalette === 90) palletTypes.type90 += palettes;
-        else if (caissesPerPalette === 210) palletTypes.type210 += palettes;
+        else if (caissesPerPalette === 108) palletTypes.type108 += palettes;
   
         // Weight calculations per box * number of boxes
         // WEIGHT_PER_BOX is expected to exist in this module
@@ -286,6 +286,7 @@ const PackingListManager = () => {
     net: 0,
     brut: 0
   };
+
 
 const generateInvoice = async () => {
   if (!currentData || !currentLot) return;
@@ -574,7 +575,10 @@ const generateInvoice = async () => {
   doc.save(fileName);
 };
 
-  const getCurrentLot = () => lots.find(lot => lot.id === currentLotId);
+// Now the corrected generatePDF function
+
+
+const getCurrentLot = () => lots.find(lot => lot.id === currentLotId);
   const currentLot = getCurrentLot();
   const currentData = currentLot?.formData;
 
@@ -745,7 +749,7 @@ const generateInvoice = async () => {
           numero: i + 1, produit: 'AVOCAT HASS BIO', calibre: '16',
           paletteNr: (i + 1).toString(), caissesPerPalette: '264'
         })),
-        calibreSummary: {}, palletTypes: { type220: 0, type264: 0, type90: 0, type210: 0 }
+        calibreSummary: {}, palletTypes: { type220: 0, type264: 0, type90: 0, type108: 0 }
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -843,7 +847,6 @@ const generateInvoice = async () => {
       showSuccess('Lot réinitialisé!');
     }
   };
-
 const generatePDF = useCallback(async () => {
   if (!currentData || !currentLot) return;
 
@@ -855,25 +858,31 @@ const generatePDF = useCallback(async () => {
 
     const pageWidth = doc.internal.pageSize.getWidth(); // 297mm
     const pageHeight = doc.internal.pageSize.getHeight(); // 210mm
-    const margin = 8;
+    const margin = 10;
 
     type RGB = [number, number, number];
     const colors: Record<string, RGB> = {
       primary: [34, 197, 94],
+      primaryDark: [22, 163, 74],
       dark: [33, 33, 33],
       muted: [97, 97, 97],
       headerBg: [230, 252, 239],
       lightGreen: [240, 253, 244],
       border: [200, 200, 200],
-      white: [255, 255, 255]
+      white: [255, 255, 255],
+      accent: [249, 115, 22]
     };
 
-    // HEADER - Green bar across top
-    const HEADER_HEIGHT = 28;
+    // ENHANCED HEADER - Larger and more prominent
+    const HEADER_HEIGHT = 35;
     doc.setFillColor(...colors.primary);
     doc.rect(0, 0, pageWidth, HEADER_HEIGHT, 'F');
+    
+    // Accent bar for visual separation
+    doc.setFillColor(...colors.primaryDark);
+    doc.rect(0, HEADER_HEIGHT - 4, pageWidth, 4, 'F');
 
-    // Logo (left side)
+    // Enhanced Logo with larger size
     try {
       const logoUrl = '/assets/logo.png';
       const res = await fetch(logoUrl).then(r => r.blob()).then(b => new Promise((res2, rej) => {
@@ -883,54 +892,89 @@ const generatePDF = useCallback(async () => {
         fr.readAsDataURL(b);
       }));
       if (res) {
-        doc.addImage(String(res), 'PNG', margin, 2, 16, 16);
+        doc.addImage(String(res), 'PNG', margin, 4, 22, 22);
       }
     } catch (e) {
-      // ignore logo errors
+      // Fallback company name
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text('FRUITS FOR YOU', margin, 15);
     }
 
-    // Title (center)
-    doc.setFontSize(14);
+    // Enhanced Title with larger font
+    doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('PACKING LIST', pageWidth / 2, 10, { align: 'center' });
-
-    // Header Info (right side) - compact
-    doc.setFontSize(7);
+    doc.text('PACKING LIST', pageWidth / 2, 15, { align: 'center' });
+    
+    // Subtitle for better context
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    const headerRightX = pageWidth - margin - 2;
-    doc.text(`Lot: ${currentLot.lotNumber}`, headerRightX, 6, { align: 'right' });
-    doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, headerRightX, 10, { align: 'right' });
-    const headerLoading = (currentData?.technicalDetails as any)?.loadingDate || currentData?.technicalDetails?.dateDeparture || new Date().toLocaleDateString('fr-FR');
-    const headerProduction = (currentData?.technicalDetails as any)?.productionDate || currentData?.technicalDetails?.dateProduction || new Date().toLocaleDateString('fr-FR');
-    doc.text(`Chargement: ${headerLoading}`, headerRightX, 14, { align: 'right' });
-  doc.text(`Production: ${headerProduction}`, headerRightX, 18, { align: 'right' });
+    doc.text('Document d\'Expédition et Traçabilité', pageWidth / 2, 22, { align: 'center' });
 
-    // Origin / Destination (compact, inside header)
-    doc.setFontSize(7);
+    // Enhanced Header Info - Larger and better organized
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    const leftX = margin + 20;
-    doc.text('Origin:', leftX, 21);
-    doc.text('Destination:', leftX + 65, 21);
+    const headerRightX = pageWidth - margin;
+    
+    const headerInfo = [
+      { label: 'LOT:', value: currentLot.lotNumber },
+      { label: 'DATE:', value: new Date().toLocaleDateString('fr-FR') },
+      { label: 'CHARGEMENT:', value: (currentData?.technicalDetails as any)?.loadingDate || currentData?.technicalDetails?.dateDeparture || 'N/A' },
+      { label: 'PRODUCTION:', value: (currentData?.technicalDetails as any)?.productionDate || currentData?.technicalDetails?.dateProduction || 'N/A' }
+    ];
+
+    let headerY = 10;
+    headerInfo.forEach((info) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(240, 240, 240);
+      doc.text(info.label, headerRightX - 30, headerY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(255, 255, 255);
+      doc.text(info.value, headerRightX, headerY, { align: 'right' });
+      headerY += 5;
+    });
+
+    // Enhanced Origin/Destination section - Larger and more prominent
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    
+    const originDestY = 27;
+    const originDestWidth = 85;
+    
+    // Origin section with background
+    doc.setFillColor(255, 255, 255, 0.15);
+    doc.roundedRect(margin + 25, originDestY, originDestWidth, 8, 2, 2, 'F');
+    doc.text('🢒 ORIGINE', margin + 30, originDestY + 5);
     
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
-    doc.text(`${currentData.origin.companyName || 'FRUITS FOR YOU'}, ${currentData.origin.city || 'Kénitra'}`, leftX, 25);
-    doc.text(`${currentData.destination.companyName || 'Westfalia'}, ${currentData.destination.city || 'France'}`, leftX + 65, 25);
+    doc.setFontSize(8);
+    doc.text(`${currentData.origin.companyName || 'FRUITS FOR YOU'}`, margin + 50, originDestY + 3);
+    doc.text(`${currentData.origin.city || 'Kénitra'}`, margin + 50, originDestY + 6);
 
-    const contentStartY = HEADER_HEIGHT + 3;
+    // Destination section with background
+    doc.setFillColor(255, 255, 255, 0.15);
+    doc.roundedRect(margin + 25 + originDestWidth + 5, originDestY, originDestWidth, 8, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.text('🢒 DESTINATION', margin + 30 + originDestWidth + 5, originDestY + 5);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${currentData.destination.companyName || 'Westfalia'}`, margin + 50 + originDestWidth + 5, originDestY + 3);
+    doc.text(`${currentData.destination.city || 'France'}`, margin + 50 + originDestWidth + 5, originDestY + 6);
+
+    const contentStartY = HEADER_HEIGHT + 8;
 
     // Calculate data
     const calculations = calculateRealSummary(currentData.palletRows || []);
-    const calibreEntries = Object.entries(calculations.calibreSummary || {});
 
-    // LEFT COLUMN - Détails des Palettes (one row per pallet entry)
-    // Render a clearer table with columns matching the request: N°, Produit, Calibre, quantity pallet N°, Caisses/Palette, Total caisses
+    // ENHANCED LEFT COLUMN - Larger Pallet Details Table
     const leftColX = margin;
-    const leftColWidth = 110;
+    const leftColWidth = 120;
 
     const palletRows = currentData.palletRows || [];
-    const tableHead = [['N°', 'Produit', 'Calibre', 'quantity pallet N°', 'Caisses/Palette', 'Total caisses']];
+    const tableHead = [['N°', 'PRODUIT', 'CALIBRE', 'PALETTES', 'CAISSES/PAL', 'TOTAL CAISSES']];
 
     const tableBody = palletRows.map((r: any, idx: number) => {
       const numero = r.numero ?? (idx + 1);
@@ -942,8 +986,15 @@ const generatePDF = useCallback(async () => {
       return [String(numero), produit, String(calibre), String(palettes), String(caissesPer), String(totalCaisses)];
     });
 
-    // totals row
-    tableBody.push(['TOTAL', '', '', String(calculations.totalPallets || 0), '', String(calculations.totalCaisses || calculations.totalBoxes || 0)]);
+    // Enhanced totals row
+    tableBody.push([
+      'TOTAL GÉNÉRAL', 
+      '', 
+      '', 
+      String(calculations.totalPallets || 0), 
+      '', 
+      String(calculations.totalCaisses || calculations.totalBoxes || 0)
+    ]);
 
     autoTable(doc, {
       startY: contentStartY,
@@ -955,28 +1006,39 @@ const generatePDF = useCallback(async () => {
         textColor: colors.white,
         halign: 'center',
         fontStyle: 'bold',
-        fontSize: 8,
-        cellPadding: 2
+        fontSize: 9,
+        cellPadding: 3,
+        lineWidth: 0.2
       },
       styles: {
-        fontSize: 7,
+        fontSize: 8,
         textColor: colors.dark,
-        cellPadding: 1.5,
+        cellPadding: 2,
         halign: 'center',
-        lineWidth: 0.1
+        lineWidth: 0.15,
+        lineColor: colors.border
       },
       columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 44, halign: 'left' },
-        2: { cellWidth: 12, halign: 'center' },
-        3: { cellWidth: 16, halign: 'center' },
-        4: { cellWidth: 18, halign: 'center' },
-        5: { cellWidth: 12, halign: 'center' }
+        0: { cellWidth: 12, halign: 'center' },
+        1: { cellWidth: 50, halign: 'left' },
+        2: { cellWidth: 18, halign: 'center' },
+        3: { cellWidth: 18, halign: 'center' },
+        4: { cellWidth: 20, halign: 'center' },
+        5: { cellWidth: 22, halign: 'center', fontStyle: 'bold' }
       },
       didParseCell: (data: any) => {
         if (data.row.index === tableBody.length - 1 && data.section === 'body') {
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fillColor = colors.lightGreen;
+          data.cell.styles.fontSize = 9;
+        }
+        // Highlight rows with data issues
+        if (data.section === 'body' && data.row.index < tableBody.length - 1) {
+          const palettes = parseInt(data.row.raw[3] || '0');
+          const caissesPer = parseInt(data.row.raw[4] || '0');
+          if (palettes > 0 && caissesPer === 0) {
+            data.cell.styles.fillColor = [255, 243, 205]; // Warning yellow
+          }
         }
       },
       margin: { left: leftColX },
@@ -984,17 +1046,19 @@ const generatePDF = useCallback(async () => {
       pageBreak: 'auto'
     });
 
-    // MIDDLE COLUMN - Pallet Type Tables generated dynamically from palletRows
-    const midColX = leftColX + leftColWidth + 5;
-    const midColWidth = 52;
+    // ENHANCED MIDDLE COLUMN - Larger Pallet Type Tables
+    const midColX = leftColX + leftColWidth + 8;
+    const midColWidth = 58;
 
     const palletRowsForPdf = currentData.palletRows || [];
-    const palletTypesToRender = [90, 210, 220, 264];
+    const palletTypesToRender = [90, 108, 220, 264];
 
-    // Helper to build table for a given caissesPerPalette
+    // Enhanced pallet type table builder
     const buildPalletTypeTable = (caissesPer: number) => {
       const groups: Record<string, number> = {};
       let totalPalettes = 0;
+      let totalBoxes = 0;
+
       palletRowsForPdf.forEach((r: any) => {
         const cpp = parseInt(r.caissesPerPalette || '0', 10) || 0;
         if (cpp === caissesPer) {
@@ -1002,12 +1066,12 @@ const generatePDF = useCallback(async () => {
           const palettes = parseInt(r.paletteNr || '0', 10) || 0;
           groups[cal] = (groups[cal] || 0) + palettes;
           totalPalettes += palettes;
+          totalBoxes += palettes * caissesPer;
         }
       });
 
       const rows = Object.entries(groups)
         .sort((a, b) => {
-          // try numeric sort by calibre if possible
           const na = parseInt(a[0], 10);
           const nb = parseInt(b[0], 10);
           if (!isNaN(na) && !isNaN(nb)) return na - nb;
@@ -1015,20 +1079,24 @@ const generatePDF = useCallback(async () => {
         })
         .map(([cal, pal]) => [cal, String(pal)]);
 
-      rows.push(['Pal.', String(totalPalettes)]);
-      rows.push(['Cais.', String(totalPalettes * caissesPer)]);
+      if (rows.length > 0) {
+        rows.push(['———', '———']); // Separator
+        rows.push(['TOTAL PAL.', String(totalPalettes)]);
+        rows.push(['TOTAL CAIS.', String(totalBoxes)]);
+      }
 
       return {
-        head: [['CAL.', `Pal. ${caissesPer}`]],
-        body: rows
+        head: [['CALIBRE', `PALETTE ${caissesPer}`]],
+        body: rows.length > 0 ? rows : [['Aucune', 'donnée']]
       };
     };
 
-    // Render one table per pallet type, stacked vertically
+    // Render enhanced pallet type tables with better spacing
     let currentY = contentStartY;
     for (let i = 0; i < palletTypesToRender.length; i++) {
       const cpp = palletTypesToRender[i];
       const tbl = buildPalletTypeTable(cpp);
+      
       autoTable(doc, {
         startY: currentY,
         head: tbl.head,
@@ -1038,178 +1106,180 @@ const generatePDF = useCallback(async () => {
           fillColor: colors.primary,
           textColor: colors.white,
           fontStyle: 'bold',
-          fontSize: 6.5,
+          fontSize: 8,
           halign: 'center',
-          cellPadding: 1
+          cellPadding: 2.5
         },
         styles: {
-          fontSize: 6.5,
-          cellPadding: 1,
+          fontSize: 7.5,
+          cellPadding: 1.5,
           textColor: colors.dark,
           halign: 'center',
-          lineWidth: 0.1
+          lineWidth: 0.15
         },
         columnStyles: {
-          0: { cellWidth: 18, fontStyle: 'bold' },
-          1: { cellWidth: 30 }
+          0: { cellWidth: 25, fontStyle: 'bold' },
+          1: { cellWidth: 28 }
         },
         didParseCell: (data: any) => {
           const bodyLen = tbl.body.length;
-          if (data.row.index >= bodyLen - 2 && data.section === 'body') {
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fillColor = colors.lightGreen;
+          if (data.section === 'body') {
+            if (data.row.raw[0] === '———') {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = colors.muted;
+            } else if (data.row.index >= bodyLen - 2 && rows.length > 0) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.fillColor = colors.lightGreen;
+              data.cell.styles.fontSize = 8;
+            }
           }
         },
         margin: { left: midColX },
         tableWidth: midColWidth
       });
 
-      currentY = (doc as any).lastAutoTable?.finalY + 4;
+      currentY = (doc as any).lastAutoTable?.finalY + 6;
     }
 
-    // RIGHT COLUMN - Details Techniques (green box)
-    const rightColX = midColX + midColWidth + 5;
+    // ENHANCED RIGHT COLUMN - Larger Technical Details
+    const rightColX = midColX + midColWidth + 8;
     const rightColWidth = pageWidth - rightColX - margin;
+    const rightColHeight = 125;
     
+    // Enhanced technical details box
     doc.setFillColor(...colors.lightGreen);
-    doc.rect(rightColX, contentStartY, rightColWidth, 115, 'F');
+    doc.roundedRect(rightColX, contentStartY, rightColWidth, rightColHeight, 3, 3, 'F');
     doc.setDrawColor(...colors.primary);
-    doc.setLineWidth(0.5);
-    doc.rect(rightColX, contentStartY, rightColWidth, 115);
+    doc.setLineWidth(0.7);
+    doc.roundedRect(rightColX, contentStartY, rightColWidth, rightColHeight, 3, 3);
     
-    doc.setFontSize(8);
+    // Enhanced header with icon
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...colors.dark);
-    doc.text('Détails techniques', rightColX + 2, contentStartY + 5);
+    doc.text('📋 DÉTAILS TECHNIQUES', rightColX + 5, contentStartY + 8);
     
+    // Separator line
+    doc.setDrawColor(...colors.primary);
+    doc.setLineWidth(0.4);
+    doc.line(rightColX + 5, contentStartY + 11, rightColX + rightColWidth - 5, contentStartY + 11);
+
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    let detailY = contentStartY + 10;
-    const lineHeight = 5;
+    doc.setFontSize(8);
+    let detailY = contentStartY + 18;
+    const lineHeight = 5.5;
     
+    // Enhanced details list with better organization
     const detailsList = [
-      { label: 'Date De Production:', value: (currentData.technicalDetails as any)?.productionDate || (currentData.technicalDetails?.dateProduction) || '' },
-      { label: 'Date De Chargement:', value: (currentData.technicalDetails as any)?.loadingDate || (currentData.technicalDetails?.dateDeparture) || '' },
-      { label: 'N° Lot:', value: currentData.technicalDetails?.lotNumbers || '' },
-      { label: 'GGN:', value: currentData.technicalDetails?.ggn || '' },
-      { label: 'Commande N°:', value: currentData.technicalDetails?.orderNumber || '' },
-      { label: 'N° Facture (Invoice #):', value: (currentData.technicalDetails as any)?.invoiceNumber || '' },
-      { label: 'Tracabilité interne:', value: (currentData.technicalDetails as any)?.traceabilityNumber || '' },
-      { label: 'Scellé:', value: (currentData.technicalDetails as any)?.seal || '' },
-      { label: 'Poids Net (KG):', value: String(currentData.technicalDetails?.poidsNetTotal || '') },
-      { label: 'Poids Brut (KG):', value: String(currentData.technicalDetails?.poidsBrutTotal || '') },
-      { label: 'Date De Creation:', value: new Date().toLocaleDateString('fr-FR') }
+      { label: '📅 Date Production:', value: (currentData.technicalDetails as any)?.productionDate || currentData.technicalDetails?.dateProduction || '—' },
+      { label: '🚚 Date Chargement:', value: (currentData.technicalDetails as any)?.loadingDate || currentData.technicalDetails?.dateDeparture || '—' },
+      { label: '🏷️ N° Lot:', value: currentData.technicalDetails?.lotNumbers || '—' },
+      { label: '🌐 GGN:', value: currentData.technicalDetails?.ggn || '—' },
+      { label: '📦 Commande N°:', value: currentData.technicalDetails?.orderNumber || '—' },
+      { label: '🧾 N° Facture:', value: (currentData.technicalDetails as any)?.invoiceNumber || '—' },
+      { label: '🔍 Traçabilité:', value: (currentData.technicalDetails as any)?.traceabilityNumber || '—' },
+      { label: '🔒 Scellé:', value: (currentData.technicalDetails as any)?.seal || '—' },
+      { label: '⚖️ Poids Net (KG):', value: String(currentData.technicalDetails?.poidsNetTotal || '—') },
+      { label: '📦 Poids Brut (KG):', value: String(currentData.technicalDetails?.poidsBrutTotal || '—') },
+      { label: '🕒 Créé le:', value: new Date().toLocaleString('fr-FR') }
     ];
 
-    // Transport info (show at top of details box for quick access)
+    // Enhanced transport info section
     doc.setFont('helvetica', 'bold');
-    doc.text('Transport:', rightColX + 3, detailY);
-    detailY += lineHeight;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
-    doc.text('Camion N°:', rightColX + 3, detailY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(currentData.transport?.truckNumber || '—', rightColX + 3 + 40, detailY);
-    detailY += lineHeight;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Chauffeur N°:', rightColX + 3, detailY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(currentData.transport?.chauffeurNumber || '—', rightColX + 3 + 40, detailY);
-    detailY += lineHeight;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Transporteur:', rightColX + 3, detailY);
-    doc.setFont('helvetica', 'normal');
-    doc.text(currentData.transport?.transporteur || '—', rightColX + 3 + 40, detailY);
-    detailY += lineHeight;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Scellé:', rightColX + 3, detailY);
-    doc.setFont('helvetica', 'normal');
-    doc.text((currentData.transport as any)?.scelle || '—', rightColX + 3 + 40, detailY);
+    doc.setTextColor(...colors.primaryDark);
+    doc.text('🚛 INFORMATIONS TRANSPORT', rightColX + 5, detailY);
     detailY += lineHeight + 2;
 
-    // Now render details label/value pairs
-    detailsList.forEach(({ label, value }) => {
+    const transportInfo = [
+      { label: 'Camion N°:', value: currentData.transport?.truckNumber || '—' },
+      { label: 'Chauffeur:', value: currentData.transport?.chauffeurNumber || '—' },
+      { label: 'Transporteur:', value: currentData.transport?.transporteur || '—' },
+      { label: 'Scellé:', value: (currentData.transport as any)?.scelle || '—' }
+    ];
+
+    transportInfo.forEach(({ label, value }) => {
       doc.setFont('helvetica', 'bold');
-      doc.text(label, rightColX + 3, detailY, { maxWidth: rightColWidth - 6 });
+      doc.setTextColor(...colors.dark);
+      doc.text(label, rightColX + 8, detailY);
       doc.setFont('helvetica', 'normal');
-      doc.text(value || '—', rightColX + 3 + 52, detailY, { maxWidth: rightColWidth - 6 });
+      doc.setTextColor(...colors.muted);
+      doc.text(value, rightColX + 35, detailY, { maxWidth: rightColWidth - 40 });
       detailY += lineHeight;
     });
 
-    // Small totals summary (Palettes / Caisses / Poids) — placed above the bottom origin/destination box
+    detailY += 3;
+
+    // Enhanced details rendering with better spacing
+    detailsList.forEach(({ label, value }) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...colors.dark);
+      doc.text(label, rightColX + 5, detailY, { maxWidth: rightColWidth - 10 });
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...colors.muted);
+      doc.text(value || '—', rightColX + 45, detailY, { maxWidth: rightColWidth - 50 });
+      detailY += lineHeight;
+    });
+
+    // ENHANCED SUMMARY SECTION - Larger and more prominent
     try {
-      const lastY = Math.max((doc as any).lastAutoTable?.finalY || contentStartY, detailY + 6);
+      const lastY = Math.max((doc as any).lastAutoTable?.finalY || contentStartY, detailY + 10);
       const totalsBoxX = margin;
       const totalsBoxW = pageWidth - margin * 2;
-      const totalsBoxH = 12;
+      const totalsBoxH = 16;
       const totalsBoxY = lastY + 6;
 
+      // Enhanced summary box
       doc.setFillColor(...colors.headerBg);
-      doc.rect(totalsBoxX, totalsBoxY, totalsBoxW, totalsBoxH, 'F');
-      doc.setDrawColor(...colors.border);
-      doc.setLineWidth(0.3);
-      doc.rect(totalsBoxX, totalsBoxY, totalsBoxW, totalsBoxH);
+      doc.roundedRect(totalsBoxX, totalsBoxY, totalsBoxW, totalsBoxH, 3, 3, 'F');
+      doc.setDrawColor(...colors.primary);
+      doc.setLineWidth(0.6);
+      doc.roundedRect(totalsBoxX, totalsBoxY, totalsBoxW, totalsBoxH, 3, 3);
 
-      doc.setFontSize(9);
+      // Enhanced summary content with larger fonts
+      doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...colors.dark);
-      const totPal = calculations.totalPallets || 0;
-      const totCais = calculations.totalCaisses || calculations.totalBoxes || 0;
-      const pn = String(currentData.technicalDetails?.poidsNetTotal || '0');
-      const pb = String(currentData.technicalDetails?.poidsBrutTotal || '0');
-      const totalsText = `${totPal} palettes • ${totCais} caisses  • Poids Net: ${pn} KG • Poids Brut: ${pb} KG`;
-      doc.text(totalsText, totalsBoxX + 6, totalsBoxY + 8);
+      
+      const summaryItems = [
+        `📦 ${calculations.totalPallets || 0} Palettes`,
+        `📋 ${calculations.totalCaisses || calculations.totalBoxes || 0} Caisses`,
+        `⚖️ Net: ${currentData.technicalDetails?.poidsNetTotal || 0} KG`,
+        `📊 Brut: ${currentData.technicalDetails?.poidsBrutTotal || 0} KG`
+      ];
+      
+      const summaryText = summaryItems.join('  •  ');
+      doc.text(summaryText, totalsBoxX + totalsBoxW / 2, totalsBoxY + 10, { align: 'center' });
+
     } catch (e) {
-      // ignore minor layout errors
-      console.warn('PDF totals render error', e);
+      console.warn('PDF summary render error', e);
     }
 
-    // Bottom: Origin -> Destination summary (compact)
-    try {
-      const bottomBoxH = 20;
-      const bottomBoxY = pageHeight - margin - bottomBoxH - 12; // leave space for footer
-      doc.setFillColor(...colors.headerBg);
-      doc.rect(margin, bottomBoxY, pageWidth - margin * 2, bottomBoxH, 'F');
-      doc.setDrawColor(...colors.border);
-      doc.setLineWidth(0.3);
-      doc.rect(margin, bottomBoxY, pageWidth - margin * 2, bottomBoxH);
-
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...colors.dark);
-      doc.text('Origin → Destination', margin + 4, bottomBoxY + 6);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      const originLine = `${(currentData?.origin?.companyName) || ''}${(currentData?.origin?.address) ? ' — ' + currentData.origin.address : ''}${(currentData?.origin?.city) ? ', ' + currentData.origin.city : ''}`;
-      const destLine = `${(currentData?.destination?.companyName) || ''}${(currentData?.destination?.address) ? ' — ' + currentData.destination.address : ''}${(currentData?.destination?.city) ? ', ' + currentData.destination.city : ''}`;
-      // two tighter lines inside the box
-      doc.text(`From: ${originLine}`, margin + 6, bottomBoxY + 11, { maxWidth: pageWidth - margin * 4 });
-      doc.text(`To:   ${destLine}`, margin + 6, bottomBoxY + 15, { maxWidth: pageWidth - margin * 4 });
-    } catch (e) {
-      // ignore rendering errors for optional content
-      console.warn('PDF origin/destination render error', e);
-    }
-
-    // FOOTER (stays at bottom)
-    doc.setFontSize(6);
+    // ENHANCED FOOTER - Larger and more informative
+    doc.setFontSize(7);
     doc.setTextColor(...colors.muted);
-    doc.text(`Généré: ${new Date().toLocaleString('fr-FR')}`, margin, pageHeight - 4);
-    doc.text(`FRUITS FOR YOU © ${new Date().getFullYear()}`, pageWidth / 2, pageHeight - 4, { align: 'center' });
+    const footerY = pageHeight - 8;
+    
+    doc.text(`🕒 Généré le ${new Date().toLocaleString('fr-FR')}`, margin, footerY);
+    doc.text(`📄 Document Officiel - Page 1/1`, pageWidth / 2, footerY, { align: 'center' });
+    doc.text(`© FRUITS FOR YOU ${new Date().getFullYear()}`, pageWidth - margin, footerY, { align: 'right' });
+
+    // Add document border for professional look
+    doc.setDrawColor(...colors.border);
+    doc.setLineWidth(0.3);
+    doc.rect(3, 3, pageWidth - 6, pageHeight - 6);
 
     const filename = `PackingList_${currentData.technicalDetails?.lotNumbers || currentLot.lotNumber || 'PACK'}_${new Date().toISOString().split('T')[0]}.pdf`;
     doc.save(filename);
 
     setShowSuccessMessage(true);
-    setTimeout(() => setShowSuccessMessage(false), 3000);
+    setTimeout(() => setShowSuccessMessage(false), 4000);
   } catch (err) {
-    console.error('Error generating PDF:', err);
+    console.error('Error generating enhanced PDF:', err);
     showSuccess('Erreur lors de la génération du PDF');
   } finally {
     setIsGeneratingPDF(false);
   }
 }, [currentData, currentLot]);
-
   // Generate Excel/CSV
   const generateExcel = () => {
     if (!currentData || !currentLot) return;
@@ -1263,7 +1333,7 @@ const generatePDF = useCallback(async () => {
 
       csv += '\nPALLET TYPES\n';
       csv += `Type 90,${calculations.palletTypes.type90}\n`;
-      csv += `Type 210,${calculations.palletTypes.type210}\n`;
+      csv += `Type 10,${calculations.palletTypes.type108}\n`;
       csv += `Type 220,${calculations.palletTypes.type220}\n`;
       csv += `Type 264,${calculations.palletTypes.type264}\n`;
       csv += `Total,${calculations.totalPallets}\n`;
@@ -2215,11 +2285,11 @@ const generatePDF = useCallback(async () => {
               <div className="p-4 space-y-3">
                 {/* Calculate proportions for bars */}
                 {(() => {
-                  const pt = calculations.palletTypes || { type90: 0, type210: 0, type220: 0, type264: 0 };
-                  const total = Math.max(1, calculations.totalPallets || (pt.type90 + pt.type210 + pt.type220 + pt.type264));
+                  const pt = calculations.palletTypes || { type90: 0, type108: 0, type220: 0, type264: 0 };
+                  const total = Math.max(1, calculations.totalPallets || (pt.type90 + pt.type108 + pt.type220 + pt.type264));
                   const items = [
                     { id: '90', label: 'Type 90', value: pt.type90, color: 'bg-blue-500', bg: 'bg-blue-100' },
-                    { id: '210', label: 'Type 210', value: pt.type210, color: 'bg-purple-500', bg: 'bg-purple-100' },
+                    { id: '108', label: 'Type 108', value: pt.type108, color: 'bg-purple-500', bg: 'bg-purple-100' },
                     { id: '220', label: 'Type 220', value: pt.type220, color: 'bg-amber-500', bg: 'bg-amber-100' },
                     { id: '264', label: 'Type 264', value: pt.type264, color: 'bg-emerald-500', bg: 'bg-emerald-100' }
                   ];

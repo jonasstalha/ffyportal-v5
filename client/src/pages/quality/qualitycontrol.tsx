@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Save, FileText, AlertTriangle, Check, X, Plus, Copy, SplitSquareHorizontal, Upload, RefreshCw } from 'lucide-react';
+import { Save, FileText, AlertTriangle, Check, X, Plus, Trash2, Copy, SplitSquareHorizontal, Upload, Cloud, CloudOff } from 'lucide-react';
 import { jsPDF } from "jspdf"; // Import jsPDF for PDF generation
-import { generateQualityRapportPDF, generateVisualRapportPDF, downloadPDF as downloadBlobPDF } from '../../lib/qualityRapportPDF';
 // Extend PaletteData to support dynamic keys for columns
 import logo from '../../../assets/icon.png';
 import Tooltip from '@mui/material/Tooltip';
@@ -21,9 +20,6 @@ import {
   doc,
   setDoc,
   getDoc,
-  getDocs,
-  query,
-  where,
   onSnapshot,
   addDoc,
   updateDoc,
@@ -91,20 +87,6 @@ interface FormData {
     category2DefectsConform?: boolean;
     category3DefectsConform?: boolean;
   };
-  // Production data fields (can be in productionConstants or directly)
-  productionConstants?: {
-    poidsBrut: number;
-    poidsNet: number;
-    nombreCP: number;
-    numeroLotsInternes: string[];
-    nombrePalettes: string;
-    typeProduction: string;
-  };
-  // Direct production fields
-  poidsBrut?: number;
-  poidsNet?: number;
-  numeroLotInterne?: string;
-  updatedAt?: string;
 }
 
 interface QualityControlLot {
@@ -245,27 +227,8 @@ export default function EnhancedPDFGenerator() {
   const selectQualitySharedLot = async (sl: SharedLot) => {
     try {
       setActiveQualitySharedLotId(sl.id);
-      // Try to find an existing QC lot by lotNumber in local state
-      let found = lots.find(l => l.lotNumber === sl.lotNumber);
-      // If not found locally, try a Firestore query to load saved lot (this will populate form inputs)
-      if (!found) {
-        try {
-          const q = query(collection(firestore, 'lots'), where('lotNumber', '==', sl.lotNumber));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            const docSnap = snap.docs[0];
-            found = { id: docSnap.id, ...(docSnap.data() as any) } as QualityControlLot;
-            // merge into local lots array so other logic can find it
-            setLots(prev => {
-              const exists = prev.find(l => l.id === found!.id);
-              if (exists) return prev;
-              return [found!, ...prev];
-            });
-          }
-        } catch (qerr) {
-          console.warn('Firestore query for lot by lotNumber failed:', qerr);
-        }
-      }
+      // Try to find an existing QC lot by lotNumber
+      const found = lots.find(l => l.lotNumber === sl.lotNumber);
       const qcForm = sl.qualityData?.qcFormData as FormData | undefined;
       const header = sl.qualityData?.headerData || {};
       const seededForm: FormData = {
@@ -275,13 +238,8 @@ export default function EnhancedPDFGenerator() {
         clientLot: header.numeroLotClient || sl.lotNumber,
       } as FormData;
       if (found) {
-        // If found, activate it and ensure form inputs reflect stored formData
+        // Do NOT overwrite existing form data on reopen; just activate it
         setActiveLotId(found.id);
-        // update lotImages from any stored imageUrls (these are URLs, not File objects)
-        if (found.imageUrls && found.imageUrls.length > 0) {
-          // ensure we have an entry in lotImages for UI (empty File[] since URLs cannot be File)
-          setLotImages(prev => ({ ...prev, [found!.id]: prev[found!.id] || [] }));
-        }
         return;
       }
       // Create a new QC lot document seeded from the shared lot data (prefer qcForm if exists)
@@ -599,12 +557,12 @@ export default function EnhancedPDFGenerator() {
   };
 
   const tabTitles = [
-    "Contrôle Qualité",
+    "Basic Info",
     "Controle poids",
     "Controle des Caracteristiques minimales",
     "Controle des parametres categorie I",
-    "Rapports",
-    "Archive Qualité",
+    "Controle produit fini",
+    "Tolerance",
   ];
 
   // Update current lot's form data
@@ -639,35 +597,6 @@ export default function EnhancedPDFGenerator() {
   useEffect(() => {
     calculateResults();
   }, [lots, activeLotId]);
-
-  // Auto-refresh production data when lot changes
-  useEffect(() => {
-    const refreshProductionData = async () => {
-      if (activeLotId) {
-        try {
-          console.log('🔄 Refreshing production data for lot:', activeLotId);
-          const allQualityLots = await getQualityControlLots();
-          console.log('📊 All quality lots retrieved:', allQualityLots);
-          
-          const currentLot = allQualityLots.find(lot => lot.id === activeLotId);
-          console.log('📋 Current lot found:', currentLot);
-          
-          if (currentLot && currentLot.formData) {
-            console.log('🎯 Production constants:', (currentLot.formData as any).productionConstants);
-            console.log('📏 Direct production fields:', {
-              poidsBrut: (currentLot.formData as any).poidsBrut,
-              poidsNet: (currentLot.formData as any).poidsNet,
-              numeroLotInterne: (currentLot.formData as any).numeroLotInterne
-            });
-          }
-        } catch (error) {
-          console.error('❌ Error refreshing production data:', error);
-        }
-      }
-    };
-
-    refreshProductionData();
-  }, [activeLotId]);
 
   const handleInputChange = (field: string, value: string | boolean) => {
     const currentFormData = getCurrentFormData();
@@ -1144,110 +1073,7 @@ export default function EnhancedPDFGenerator() {
     
     try {
       const currentFormData = getCurrentFormData();
-
-      // Helper: convert File -> data URL (base64) for PDF generation
-      const fileToDataUrl = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === 'string') resolve(reader.result);
-            else reject(new Error('Failed to read file'));
-          };
-          reader.onerror = (e) => reject(e);
-          reader.readAsDataURL(file);
-        });
-      };
-
-      // Build a QualityRapport-like object using current form data and images (grouped by calibre)
-      // Determine calibres from palettes sizes
-      const calibres = Array.from(new Set((currentFormData.palettes || []).map(p => p.size || 'N/A')));
-
-      // Gather images for the active lot (if any). lotImages maps lotId -> File[]
-      const currentLotFiles: File[] = activeLotId ? (lotImages[activeLotId] || []) : [];
-
-      // Try to map images to calibres by filename convention (e.g., calibre included) or distribute evenly
-      const imagesByCalibre: Record<string, string[]> = {};
-      calibres.forEach(c => (imagesByCalibre[c] = []));
-
-      // If there are uploaded files, convert them to data URLs and attach to calibres
-      if (currentLotFiles.length > 0) {
-        // Attempt to detect calibre from file name (e.g., "calibre_XX_1.jpg")
-        for (const file of currentLotFiles) {
-          try {
-            const dataUrl = await fileToDataUrl(file);
-            // crude detection: look for any calibre string in filename
-            const lowerName = file.name.toLowerCase();
-            const matched = calibres.find(c => lowerName.includes(String(c).toLowerCase()));
-            if (matched) {
-              imagesByCalibre[matched].push(dataUrl);
-            } else {
-              // fallback: push to first calibre with less than 12 images
-              const target = calibres.find(c => (imagesByCalibre[c] || []).length < 12) || calibres[0];
-              imagesByCalibre[target].push(dataUrl);
-            }
-          } catch (err) {
-            console.error('Error converting file for PDF:', err);
-          }
-        }
-      }
-
-      // If there are imageUrls from synced Firebase (imageUrls stored on the lot object), use them too
-      if (activeLotId) {
-        const lotFromState = lots.find(l => l.id === activeLotId) || null;
-        const urls: string[] = lotFromState?.imageUrls || [];
-        if (urls.length > 0) {
-          for (const url of urls) {
-            const matched = calibres.find(c => url.toLowerCase().includes(String(c).toLowerCase()));
-            if (matched) imagesByCalibre[matched].push(url);
-            else {
-              const target = calibres.find(c => (imagesByCalibre[c] || []).length < 12) || calibres[0];
-              imagesByCalibre[target].push(url);
-            }
-          }
-        }
-      }
-
-      // Build rapport object expected by generateQualityRapportPDF
-      const rapport: any = {
-        lotNumber: activeLotId ? (lots.find(l => l.id === activeLotId)?.lotNumber || activeLotId) : currentFormData.clientLot || 'unknown',
-        date: currentFormData.date || new Date().toISOString(),
-        controller: currentUser || 'unknown',
-        palletNumber: currentFormData.shipmentNumber || '',
-        calibres,
-        images: imagesByCalibre,
-        testResults: {},
-        status: 'generated',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        submittedAt: new Date().toISOString()
-      };
-
-      // Merge basic test results from form palettes into testResults per calibre (first palette per calibre)
-      for (const p of currentFormData.palettes || []) {
-        const c = p.size || 'N/A';
-        if (!rapport.testResults[c]) {
-          rapport.testResults[c] = {
-            poids: p.packageWeight || undefined,
-            firmness: p.firmness || undefined,
-            color: p.colorDefect || undefined,
-            defects: p.shapeDefect || undefined,
-            notes: ''
-          };
-        }
-      }
-
-      // Now fall through to original PDF drawing logic but first call the dedicated generator that supports images
-      // Generate the visual rapport which includes images and download it
-      try {
-        const visualBlob = await generateVisualRapportPDF(rapport);
-        downloadBlobPDF(visualBlob, `Rapport_Qualite_Visuel_${rapport.lotNumber}_${new Date().toISOString().split('T')[0]}.pdf`);
-      } catch (visErr) {
-        console.warn('Visual rapport generation failed, continuing with standard PDF:', visErr);
-      }
-
-      // Continue with the existing detailed PDF generation (tables, etc.) below
-  // Use A3 landscape so wide tables (26+ columns) don't get collapsed
-  const doc = new jsPDF('landscape', 'mm', 'a3');
+      const doc = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       
       // Enhanced header with text-based branding block (no image)
@@ -1671,8 +1497,8 @@ export default function EnhancedPDFGenerator() {
       currentY += 8;
       currentY = drawEnhancedTable(doc, currentY, paletteHeaders, minCharData);
 
-  // --- New Page for the rest (A3 landscape to match first page) ---
-  doc.addPage('a3', 'landscape');
+      // --- New Page for the rest ---
+      doc.addPage('landscape');
       let page2Y = 20;
 
       // Compact version of drawEnhancedTable for page 2
@@ -1891,13 +1717,6 @@ export default function EnhancedPDFGenerator() {
       // Save with enhanced filename
       const fileName = `Rapport_Qualite_${currentFormData.product || 'Produit'}_${currentFormData.date || new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
-      // Also generate the standard quality rapport PDF (which includes per-calibre images)
-      try {
-        const fullPdfBlob = await generateQualityRapportPDF(rapport);
-        downloadBlobPDF(fullPdfBlob, `Rapport_Qualite_Full_${rapport.lotNumber}_${new Date().toISOString().split('T')[0]}.pdf`);
-      } catch (fullErr) {
-        console.warn('Full quality rapport generation failed:', fullErr);
-      }
       
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -2050,57 +1869,6 @@ export default function EnhancedPDFGenerator() {
       loadFirebaseLots();
     }
   }, []);
-
-  // Auto-refresh quality control data every 30 seconds to catch production updates
-  useEffect(() => {
-    const autoRefreshInterval = setInterval(async () => {
-      try {
-        console.log('🔄 Auto-refreshing quality control data...');
-        const firebaseLots = await getQualityControlLots('controller');
-        
-        // Check if any lots have been updated since last load
-        const hasUpdates = firebaseLots.some(fbLot => {
-          const existingLot = lots.find(lot => lot.id === fbLot.id);
-          return !existingLot || new Date(fbLot.updatedAt) > new Date(existingLot.updatedAt);
-        });
-
-        if (hasUpdates || firebaseLots.length !== lots.length) {
-          console.log('📊 Found updates from production, refreshing data...');
-          const convertedLots: QualityControlLot[] = firebaseLots.map(lot => ({
-            id: lot.id,
-            lotNumber: lot.lotNumber,
-            formData: lot.formData as FormData,
-            images: [],
-            imageUrls: lot.images,
-            status: lot.status,
-            phase: lot.phase,
-            createdAt: lot.createdAt,
-            updatedAt: lot.updatedAt,
-            controller: lot.controller,
-            chief: lot.chief,
-            chiefComments: lot.chiefComments,
-            chiefApprovalDate: lot.chiefApprovalDate,
-            syncedToFirebase: true
-          }));
-          
-          setLots(convertedLots);
-          
-          // Update sync status
-          const statusMap: {[key: string]: 'synced'} = {};
-          convertedLots.forEach(lot => {
-            statusMap[lot.id] = 'synced';
-          });
-          setSyncStatus(statusMap);
-          
-          console.log('✅ Auto-refresh completed with production updates');
-        }
-      } catch (error) {
-        console.error('❌ Auto-refresh error:', error);
-      }
-    }, 30000); // Refresh every 30 seconds
-
-    return () => clearInterval(autoRefreshInterval);
-  }, [lots]);
 
   // Manual sync function to pull latest data from Firebase
   const handleSyncFromFirebase = async () => {
@@ -2402,21 +2170,21 @@ export default function EnhancedPDFGenerator() {
   const conformityText = results.isConform ? 'Conforme' : 'Non conforme';
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100">
 
       {/* Main content area */}
-      <div className="flex-1 p-2 sm:p-4 lg:p-6 overflow-auto">
-        <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
+      <div className="flex-1 p-6 overflow-auto transition-all duration-300">
+        <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-md p-6">
           {/* Multi-lots (Qualité) - persisted in shared_lots */}
-          <div className="mb-4 lg:mb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-3">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Suivi de la production - Multi-lots (Qualité)</h2>
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-semibold text-gray-800">Suivi de la production - Multi-lots (Qualité)</h2>
             </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-4">
               <button
                 onClick={handleCreateQualitySharedLot}
                 disabled={creatingQualityLot}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 text-sm sm:text-base shrink-0"
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center gap-2"
               >
                 <Plus className="h-4 w-4" />
                 Nouveau Lot
@@ -2425,127 +2193,143 @@ export default function EnhancedPDFGenerator() {
                 value={newQualityLotNumber}
                 onChange={(e) => setNewQualityLotNumber(e.target.value)}
                 placeholder="Saisir numéro de lot (optionnel)"
-                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
+                className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              {/* Prev/Next navigation */}
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (!activeQualitySharedLotId || qualitySharedLots.length === 0) return;
+                    const idx = qualitySharedLots.findIndex(l => l.id === activeQualitySharedLotId);
+                    const prev = idx > 0 ? qualitySharedLots[idx - 1] : null;
+                    if (prev) selectQualitySharedLot(prev);
+                  }}
+                  className="px-3 py-2 border rounded hover:bg-gray-50"
+                >
+                  ◀ Précédent
+                </button>
+                <button
+                  onClick={() => {
+                    if (!activeQualitySharedLotId || qualitySharedLots.length === 0) return;
+                    const idx = qualitySharedLots.findIndex(l => l.id === activeQualitySharedLotId);
+                    const next = idx >= 0 && idx < qualitySharedLots.length - 1 ? qualitySharedLots[idx + 1] : null;
+                    if (next) selectQualitySharedLot(next);
+                  }}
+                  className="px-3 py-2 border rounded hover:bg-gray-50"
+                >
+                  Suivant ▶
+                </button>
+              </div>
+              {activeQualitySharedLotId && (
+                <button
+                  onClick={async () => {
+                    const current = getCurrentLot();
+                    if (!current || !activeQualitySharedLotId) return;
+                    try {
+                      // Save/merge current QC header back to shared_lots qualityData
+                      const headerData = {
+                        date: current.formData.date,
+                        produit: current.formData.product,
+                        numeroLotClient: current.formData.clientLot
+                      };
+                      await sharedLotService.updateLot(activeQualitySharedLotId, {
+                        qualityData: {
+                          ...(sharedLots.find(l => l.id === activeQualitySharedLotId)?.qualityData || {}),
+                          headerData
+                        }
+                      } as any);
+                      alert('Données lot qualité sauvegardées.');
+                    } catch (err) {
+                      console.error('Save to shared_lots failed', err);
+                      alert('Échec de la sauvegarde vers shared_lots.');
+                    }
+                  }}
+                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+                >
+                  Sauvegarder ce lot (Qualité)
+                </button>
+              )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {qualitySharedLots.map((sl) => (
                 <div
                   key={sl.id}
-                  className={`relative text-left border-2 rounded-xl p-3 sm:p-4 transition-all duration-300 cursor-pointer overflow-hidden ${
-                    activeQualitySharedLotId === sl.id 
-                      ? 'border-blue-500 bg-blue-50 shadow-lg' 
-                      : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-md'
-                  }`}
-                  onClick={() => handleOpenSharedLot(sl)}
+                  className={`text-left border rounded-lg p-4 bg-gray-50 transition shadow-sm ${activeQualitySharedLotId === sl.id ? 'ring-2 ring-blue-500 bg-white' : 'hover:bg-white'}`}
                 >
-                  {/* Active indicator */}
-                  {activeQualitySharedLotId === sl.id && (
-                    <div className="absolute top-2 right-2 w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-                  )}
-                  
-                  <div className="flex items-start justify-between mb-3 sm:mb-4 gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                        Lot de Qualité
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm text-gray-500">Lot</div>
                       {renamingLotId === sl.id ? (
-                        <div className="flex items-center gap-1 sm:gap-2">
+                        <div className="flex items-center gap-2">
                           <input
-                            className="border-2 border-blue-300 rounded-lg px-2 sm:px-3 py-1 sm:py-2 text-sm font-medium flex-1 min-w-0 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="border rounded px-2 py-1 text-sm"
                             value={renameValue}
                             onChange={(e) => setRenameValue(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
                           />
                           <button
-                            className="text-xs bg-green-600 text-white px-2 sm:px-3 py-1 sm:py-2 rounded-lg hover:bg-green-700 transition shrink-0"
-                            onClick={(e) => { e.stopPropagation(); handleRenameSharedLot(sl, renameValue.trim()); }}
+                            className="text-xs bg-green-600 text-white px-2 py-1 rounded"
+                            onClick={() => handleRenameSharedLot(sl, renameValue.trim())}
                           >
-                            ✓
+                            Enregistrer
                           </button>
                           <button
-                            className="text-xs bg-gray-400 text-white px-2 sm:px-3 py-1 sm:py-2 rounded-lg hover:bg-gray-500 transition shrink-0"
-                            onClick={(e) => { e.stopPropagation(); setRenamingLotId(null); setRenameValue(''); }}
+                            className="text-xs bg-gray-200 px-2 py-1 rounded"
+                            onClick={() => { setRenamingLotId(null); setRenameValue(''); }}
                           >
-                            ✕
+                            Annuler
                           </button>
                         </div>
                       ) : (
-                        <div className="text-lg sm:text-xl font-bold text-gray-800 truncate" title={sl.lotNumber}>
-                          {sl.lotNumber}
-                        </div>
+                        <div className="text-lg font-semibold">{sl.lotNumber}</div>
                       )}
                     </div>
-                    <div className="shrink-0">
-                      <span className={`text-xs px-2 sm:px-3 py-1 rounded-full font-medium whitespace-nowrap ${
-                        sl.status === 'completed' ? 'bg-green-100 text-green-800 border border-green-200' :
-                        sl.status === 'in-progress' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
-                        'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                      }`}>
-                        {sl.status === 'completed' ? '✓ Terminé' :
-                         sl.status === 'in-progress' ? '⏳ En cours' :
-                         '📝 Brouillon'}
-                      </span>
-                    </div>
+                    <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">
+                      {sl.status || 'brouillon'}
+                    </span>
                   </div>
-
-                  {/* Lot information */}
-                  <div className="space-y-1 sm:space-y-2 mb-3 sm:mb-4">
-                    <div className="text-xs sm:text-sm text-gray-600 truncate">
-                      <span className="font-medium">Créé:</span> {' '}
-                      {sl.createdAt ? new Date(sl.createdAt).toLocaleDateString('fr-FR') : 'N/A'}
-                    </div>
-                    {sl.updatedAt && (
-                      <div className="text-xs sm:text-sm text-gray-600 truncate">
-                        <span className="font-medium">Modifié:</span> {' '}
-                        {new Date(sl.updatedAt).toLocaleDateString('fr-FR')}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-1 sm:gap-2 pt-2 sm:pt-3 border-t border-gray-200">
+                  <div className="mt-3 flex items-center gap-2">
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleOpenSharedLot(sl); }}
-                      className="flex-1 text-xs sm:text-sm px-2 sm:px-4 py-1 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium truncate"
+                      onClick={() => handleOpenSharedLot(sl)}
+                      className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
                     >
-                      📂 Ouvrir
+                      Ouvrir
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setRenamingLotId(sl.id); setRenameValue(sl.lotNumber); }}
-                      className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition shrink-0"
-                      title="Renommer le lot"
+                      onClick={() => handleOpenAndDownload(sl)}
+                      className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
+                      title="Ouvrir et télécharger le PDF"
                     >
-                      ✏️
+                      Télécharger
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteSharedLot(sl); }}
-                      className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition shrink-0"
-                      title="Supprimer le lot"
+                      onClick={() => { setRenamingLotId(sl.id); setRenameValue(sl.lotNumber); }}
+                      className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
                     >
-                      🗑️
+                      Renommer
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSharedLot(sl)}
+                      className="text-sm px-3 py-1 border border-red-300 text-red-700 rounded hover:bg-red-50"
+                    >
+                      Supprimer
                     </button>
                   </div>
                 </div>
               ))}
               {qualitySharedLots.length === 0 && (
-                <div className="col-span-full text-center py-8 sm:py-12">
-                  <div className="text-gray-400 text-4xl sm:text-6xl mb-2 sm:mb-4">📋</div>
-                  <div className="text-gray-500 text-base sm:text-lg font-medium">Aucun lot qualité</div>
-                  <div className="text-gray-400 text-sm">Créez votre premier lot pour commencer</div>
-                </div>
+                <div className="text-gray-500 text-sm">Aucun lot qualité pour le moment.</div>
               )}
             </div>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center gap-2">
-            <span>CONTROLE DE LA QUALITE DU PRODUIT FINAL</span>
+          <h1 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            CONTROLE DE LA QUALITE DU PRODUIT FINAL
             <Tooltip title="Ce formulaire permet de contrôler la qualité des produits avant expédition.">
               <InfoOutlinedIcon className="text-blue-400" fontSize="small" />
             </Tooltip>
           </h1>
 
           {/* Action buttons */}
-          <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6">
+          <div className="flex flex-wrap gap-4 mb-6">
             <button
               onClick={handleGenerateReport}
               className="px-5 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 focus:ring-2 focus:ring-blue-400 font-semibold transition"
@@ -2573,6 +2357,96 @@ export default function EnhancedPDFGenerator() {
               <Save className="w-4 h-4 inline mr-2" />
               Sauvegarder
             </button>
+            {activeQualitySharedLotId && (
+              <button
+                onClick={async () => {
+                  // Persist current working form back into the selected shared lot
+                  try {
+                    await saveCurrentToSharedLot();
+                    alert('Données du lot synchronisées avec Multi-lots (Qualité).');
+                  } catch {}
+                }}
+                className="px-5 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-400 font-semibold transition"
+                title="Sauvegarder ce lot vers Multi-lots"
+              >
+                <Save className="w-4 h-4 inline mr-2" />
+                Sync ce lot
+              </button>
+            )}
+            
+            <button
+              onClick={handleSyncFromFirebase}
+              className="px-5 py-2 bg-cyan-600 text-white rounded shadow hover:bg-cyan-700 focus:ring-2 focus:ring-cyan-400 font-semibold transition"
+              title="Synchroniser depuis Firebase"
+            >
+              <Cloud className="w-4 h-4 inline mr-2" />
+              Sync Firebase
+            </button>
+            
+            <button
+              onClick={handleSubmitAllLots}
+              className="px-5 py-2 bg-purple-600 text-white rounded shadow hover:bg-purple-700 focus:ring-2 focus:ring-purple-400 font-semibold transition"
+              title="Soumettre tous les lots complétés"
+            >
+              <Upload className="w-4 h-4 inline mr-2" />
+              Soumettre lots
+            </button>
+            
+            <button
+              onClick={() => {
+                // Clear all cached data
+                setLots([]);
+                setActiveLotId(null);
+                setActiveTab(0);
+                setPaletteCount(1);
+                setSyncStatus({});
+                setUploadingImages({});
+                setValidation({});
+                setFilteredRapports([]);
+                setLotImages({});
+                setResults({
+                  minCharacteristics: 0,
+                  totalDefects: 0,
+                  missingBrokenGrains: 0,
+                  weightConformity: 0,
+                  isConform: false
+                });
+                
+                // Clear localStorage cache if any
+                localStorage.removeItem('qualityControlCache');
+                localStorage.removeItem('qualityControlLots');
+                
+                // Show success message
+                alert('Cache vidé avec succès!');
+              }}
+              className="px-5 py-2 bg-red-600 text-white rounded shadow hover:bg-red-700 focus:ring-2 focus:ring-red-400 font-semibold transition"
+              title="Vider le cache de la page"
+            >
+              <Trash2 className="w-4 h-4 inline mr-2" />
+              Vider Cache
+            </button>
+            
+            {/* Manual sync button */}
+            {getCurrentLot() && syncStatus[getCurrentLot()!.id] === 'error' && (
+              <button
+                onClick={() => getCurrentLot() && syncLotToFirebase(getCurrentLot()!)}
+                className="px-5 py-2 bg-orange-600 text-white rounded shadow hover:bg-orange-700 focus:ring-2 focus:ring-orange-400 font-semibold transition"
+                disabled={uploadingImages[getCurrentLot()!.id]}
+                title="Resynchroniser avec Firebase"
+              >
+                {uploadingImages[getCurrentLot()!.id] ? (
+                  <>
+                    <Upload className="w-4 h-4 inline mr-2 animate-spin" />
+                    Sync...
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-4 h-4 inline mr-2" />
+                    Sync Firebase
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           {/* Display exact rapports for the current lot after save */}
@@ -2598,12 +2472,12 @@ export default function EnhancedPDFGenerator() {
           )}
 
           {/* Tab navigation */}
-          <div className="border-b border-gray-200 mb-4 sm:mb-6">
-            <div className="flex flex-wrap -mb-px overflow-x-auto">
+          <div className="border-b border-gray-200 mb-6">
+            <div className="flex flex-wrap -mb-px">
               {tabTitles.map((title, index) => (
                 <button
                   key={index}
-                  className={`flex-shrink-0 inline-block py-2 px-2 sm:px-4 font-medium text-xs sm:text-sm rounded-t-lg transition-all duration-200 whitespace-nowrap ${
+                  className={`inline-block py-2 px-4 font-medium text-sm rounded-t-lg transition-all duration-200 ${
                     activeTab === index 
                       ? 'text-blue-600 border-b-2 border-blue-600 active bg-blue-50'
                       : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -2616,11 +2490,11 @@ export default function EnhancedPDFGenerator() {
             </div>
           </div>
           {/* Tab content */}
-          <div className="py-2 sm:py-4 transition-all duration-300">
+          <div className="py-4 transition-all duration-300">
             {/* Basic Information Tab */}
             {activeTab === 0 && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                <div className="space-y-3 sm:space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
                   {/* Date */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
@@ -2631,7 +2505,7 @@ export default function EnhancedPDFGenerator() {
                       type="date"
                       value={getCurrentFormData().date}
                       onChange={(e) => handleInputChange('date', e.target.value)}
-                      className={`w-full px-2 sm:px-3 py-2 border rounded-md text-sm sm:text-base ${validation.date ? 'border-red-400' : 'border-gray-300'}`}
+                      className={`w-full px-3 py-2 border rounded-md ${validation.date ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     {validation.date && <span className="text-xs text-red-500">{validation.date}</span>}
                   </div>
@@ -2645,7 +2519,7 @@ export default function EnhancedPDFGenerator() {
                       type="text"
                       value={getCurrentFormData().product}
                       onChange={(e) => handleInputChange('product', e.target.value)}
-                      className={`w-full px-2 sm:px-3 py-2 border rounded-md text-sm sm:text-base ${validation.product ? 'border-red-400' : 'border-gray-300'}`}
+                      className={`w-full px-3 py-2 border rounded-md ${validation.product ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     {validation.product && <span className="text-xs text-red-500">{validation.product}</span>}
                   </div>
@@ -2659,7 +2533,7 @@ export default function EnhancedPDFGenerator() {
                       type="text"
                       value={getCurrentFormData().variety}
                       onChange={(e) => handleInputChange('variety', e.target.value)}
-                      className={`w-full px-2 sm:px-3 py-2 border rounded-md text-sm sm:text-base ${validation.variety ? 'border-red-400' : 'border-gray-300'}`}
+                      className={`w-full px-3 py-2 border rounded-md ${validation.variety ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     {validation.variety && <span className="text-xs text-red-500">{validation.variety}</span>}
                   </div>
@@ -2673,7 +2547,7 @@ export default function EnhancedPDFGenerator() {
                       type="text"
                       value={getCurrentFormData().campaign}
                       onChange={(e) => handleInputChange('campaign', e.target.value)}
-                      className={`w-full px-2 sm:px-3 py-2 border rounded-md text-sm sm:text-base ${validation.campaign ? 'border-red-400' : 'border-gray-300'}`}
+                      className={`w-full px-3 py-2 border rounded-md ${validation.campaign ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     {validation.campaign && <span className="text-xs text-red-500">{validation.campaign}</span>}
                   </div>
@@ -2782,8 +2656,6 @@ export default function EnhancedPDFGenerator() {
                     </div>
                   </div>
                 </div>
-
-                
                 
   
               </div>
@@ -2791,44 +2663,44 @@ export default function EnhancedPDFGenerator() {
             
             {/* Controle poids Tab */}
             {activeTab === 1 && (
-              <div className="mb-6 sm:mb-10">
-                <h2 className="text-lg sm:text-xl font-bold text-green-700 mb-3 sm:mb-4 border-b pb-2 flex items-center gap-2">
+              <div className="mb-10">
+                <h2 className="text-xl font-bold text-green-700 mb-4 border-b pb-2 flex items-center gap-2">
                   I) Contrôle du poids du colis
                   <Tooltip title="Vérification du poids de chaque palette."><InfoOutlinedIcon fontSize="inherit" /></Tooltip>
                 </h2>
-                <div className="overflow-x-auto border rounded-lg shadow-md bg-white">
-                  <table className="bg-white border-collapse w-full" style={{ minWidth: `${Math.max(600, 200 + (paletteCount * 60) + 80)}px` }}>
+                <div className="overflow-x-auto border rounded-lg shadow-md">
+                  <table className="bg-white border-collapse" style={{ minWidth: `${Math.max(800, 64 + (paletteCount * 80) + 80)}px` }}>
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-green-100">
-                      <th className="py-2 px-2 sm:px-3 border sticky left-0 bg-green-100 z-30 min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Paramètre</th>
+                      <th className="py-2 px-3 border sticky left-0 bg-green-100 z-30 w-64 min-w-64">Paramètre</th>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <th key={i} className="py-2 px-1 sm:px-2 border bg-white text-center min-w-[50px] sm:min-w-[60px] text-xs sm:text-sm">{i+1}</th>
+                        <th key={i} className="py-2 px-3 border bg-white text-center w-20 min-w-20">{i+1}</th>
                       ))}
-                      <th className="py-2 px-2 sm:px-3 border bg-green-200 min-w-[70px] sm:min-w-[80px] text-xs sm:text-sm">Moyenne</th>
+                      <th className="py-2 px-3 border bg-green-200 w-20 min-w-20">Moyenne</th>
                     </tr>
                   </thead>
                   <tbody>
                     {/* Poids du colis (kg) */}
                     <tr className="even:bg-gray-50 transition-all">
-                      <td className="py-2 px-2 sm:px-3 border sticky left-0 bg-white z-20 font-medium min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Poids du colis (kg)</td>
+                      <td className="py-2 px-3 border sticky left-0 bg-white z-20 font-medium w-64 min-w-64">Poids du colis (kg)</td>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <td key={i} className="py-1 px-1 sm:px-2 border min-w-[50px] sm:min-w-[60px]">
+                        <td key={i} className="py-1 px-2 border w-20 min-w-20">
                           <input
                             type="number"
                             step="0.1"
                             min="0"
                             value={getCurrentFormData().palettes[i]?.packageWeight || ''}
                             onChange={(e) => handlePaletteChange(i, 'packageWeight', e.target.value)}
-                            className="w-full p-1 border border-gray-200 rounded text-center text-xs sm:text-sm"
+                            className="w-full p-1 border border-gray-200 rounded text-center"
                             placeholder="0.0"
                           />
                         </td>
                       ))}
-                      <td className="py-2 px-2 sm:px-3 border font-medium bg-green-50 text-center min-w-[70px] sm:min-w-[80px] text-xs sm:text-sm">{calculateAverages('packageWeight')}</td>
+                      <td className="py-2 px-3 border font-medium bg-green-50 text-center w-20 min-w-20">{calculateAverages('packageWeight')}</td>
                     </tr>
                     {/* Poids net requis (kg) */}
                     <tr className="even:bg-gray-50 transition-all">
-                      <td className="py-2 px-2 sm:px-3 border sticky left-0 bg-white z-20 font-medium min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Poids net requis (kg)</td>
+                      <td className="py-2 px-3 border sticky left-0 bg-white z-20 font-medium w-64 min-w-64">Poids net requis (kg)</td>
                       {Array.from({ length: paletteCount }).map((_, i) => (
                         <td key={i} className="py-1 px-2 border w-20 min-w-20">
                           <input
@@ -2872,33 +2744,33 @@ export default function EnhancedPDFGenerator() {
 
             {/* Controle des Caracteristiques minimales Tab */}
             {activeTab === 2 && (
-              <div className="mb-6 sm:mb-10">
-                <h2 className="text-lg sm:text-xl font-bold text-green-700 mb-3 sm:mb-4 border-b pb-2 flex items-center gap-2">
+              <div className="mb-10">
+                <h2 className="text-xl font-bold text-green-700 mb-4 border-b pb-2 flex items-center gap-2">
                   II) Contrôle des caractéristiques minimales
                   <Tooltip title="Vérification des caractéristiques minimales de chaque palette."><InfoOutlinedIcon fontSize="inherit" /></Tooltip>
                 </h2>
-                <div className="overflow-x-auto border rounded-lg shadow-md bg-white">
-                  <table className="bg-white border-collapse w-full" style={{ minWidth: `${Math.max(600, 200 + (paletteCount * 60) + 80)}px` }}>
+                <div className="overflow-x-auto border rounded-lg shadow-md">
+                  <table className="bg-white border-collapse" style={{ minWidth: `${Math.max(800, 64 + (paletteCount * 80) + 80)}px` }}>
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-green-100">
-                      <th className="py-2 px-2 sm:px-3 border sticky left-0 bg-green-100 z-30 min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Paramètre</th>
+                      <th className="py-2 px-3 border sticky left-0 bg-green-100 z-30 w-64 min-w-64">Paramètre</th>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <th key={i} className="py-2 px-1 sm:px-2 border bg-white text-center min-w-[50px] sm:min-w-[60px] text-xs sm:text-sm">{i+1}</th>
+                        <th key={i} className="py-2 px-3 border bg-white text-center w-20 min-w-20">{i+1}</th>
                       ))}
-                      <th className="py-2 px-2 sm:px-3 border bg-green-200 min-w-[70px] sm:min-w-[80px] text-xs sm:text-sm">Moyenne</th>
+                      <th className="py-2 px-3 border bg-green-200 w-20 min-w-20">Moyenne</th>
                     </tr>
                   </thead>
                   <tbody>
                     {/* Firmness (kgf) [13-14] (string input with Moyenne) */}
                     <tr>
-                      <td className="py-2 px-2 sm:px-3 border sticky left-0 bg-white z-20 font-medium min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Firmness (kgf) [13-14]</td>
+                      <td className="py-2 px-3 border sticky left-0 bg-white z-20 font-medium w-64 min-w-64">Firmness (kgf) [13-14]</td>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <td key={i} className="py-1 px-1 sm:px-2 border min-w-[50px] sm:min-w-[60px]">
+                        <td key={i} className="py-1 px-2 border w-20 min-w-20">
                           <input
                             type="text"
                             value={getCurrentFormData().palettes[i]?.firmness || ''}
                             onChange={(e) => handlePaletteChange(i, 'firmness', e.target.value)}
-                            className="w-full p-1 border border-gray-200 rounded text-center text-xs sm:text-sm"
+                            className="w-full p-1 border border-gray-200 rounded text-center"
                           />
                         </td>
                       ))}
@@ -3063,35 +2935,33 @@ export default function EnhancedPDFGenerator() {
             
             {/* Controle des Parametres Categorie I Tab */}
             {activeTab === 3 && (
-              <div className="mb-6 sm:mb-10">
-                <h2 className="text-lg sm:text-xl font-bold text-green-700 mb-3 sm:mb-4 border-b pb-2 flex items-center gap-2">
+              <div className="overflow-x-auto mb-10">
+                <h2 className="text-xl font-bold text-green-700 mb-4 border-b pb-2 flex items-center gap-2">
                   III) Contrôle des caractéristiques spécifiques
                   <Tooltip title="Vérification des caractéristiques spécifiques de chaque palette."><InfoOutlinedIcon fontSize="inherit" /></Tooltip>
                 </h2>
-                <div className="overflow-x-auto border rounded-lg shadow-md bg-white">
-                <table className="min-w-full bg-white border-collapse" style={{ minWidth: `${Math.max(600, 200 + (paletteCount * 60) + 80)}px` }}>
+                <table className="min-w-full bg-white border-collapse rounded-lg shadow-md">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-green-100">
-                      <th className="py-2 px-2 sm:px-3 border min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Paramètre</th>
+                      <th className="py-2 px-3 border w-64 min-w-64">Paramètre</th>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <th key={i} className="py-2 px-1 sm:px-2 border min-w-[50px] sm:min-w-[60px] text-xs sm:text-sm">Palette {i + 1}</th>
+                        <th key={i} className="py-2 px-3 border">Palette {i + 1}</th>
                       ))}
-                      <th className="py-2 px-2 sm:px-3 border bg-green-200 min-w-[70px] sm:min-w-[80px] text-xs sm:text-sm">Moyenne</th>
+                      <th className="py-2 px-3 border bg-green-200">Moyenne</th>
                     </tr>
                   </thead>
                   <tbody>
                     {/* Défaut de forme (Moyenne) */}
                     <tr>
-                      <td className="py-2 px-2 sm:px-3 border min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Défaut de forme</td>
+                      <td className="py-2 px-3 border w-64 min-w-64">Défaut de forme</td>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <td key={i} className="py-1 px-1 sm:px-2 border min-w-[50px] sm:min-w-[60px]">
+                        <td key={i} className="py-1 px-2 border">
                           <input
                             type="number"
                             step="0.1"
                             min="0"
                             value={getCurrentFormData().palettes[i]?.shapeDefect || ''}
                             onChange={(e) => handlePaletteChange(i, 'shapeDefect', e.target.value)}
-                            className="w-full p-1 border border-gray-200 rounded text-center text-xs sm:text-sm"
                             className="w-full p-1 border border-gray-200 rounded text-center"
                           />
                         </td>
@@ -3199,40 +3069,38 @@ export default function EnhancedPDFGenerator() {
                     </tr>
                   </tbody>
                 </table>
-                </div>
               </div>
             )}
             
             {/* Controle Produit Fini Tab */}
             {activeTab === 4 && (
-              <div className="mb-6 sm:mb-10">
-                <h2 className="text-lg sm:text-xl font-bold text-green-700 mb-3 sm:mb-4 border-b pb-2 flex items-center gap-2">
+              <div className="overflow-x-auto mb-10">
+                <h2 className="text-xl font-bold text-green-700 mb-4 border-b pb-2 flex items-center gap-2">
                   IV) Contrôle du produit fini
                   <Tooltip title="Vérification des informations du produit fini."><InfoOutlinedIcon fontSize="inherit" /></Tooltip>
                 </h2>
-                <div className="overflow-x-auto border rounded-lg shadow-md bg-white">
-                <table className="min-w-full bg-white border-collapse" style={{ minWidth: `${Math.max(600, 200 + (paletteCount * 60) + 80)}px` }}>
+                <table className="min-w-full bg-white border-collapse rounded-lg shadow-md">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-green-100">
-                      <th className="py-2 px-2 sm:px-3 border min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Paramètre</th>
+                      <th className="py-2 px-3 border w-64 min-w-64">Paramètre</th>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <th key={i} className="py-2 px-1 sm:px-2 border min-w-[50px] sm:min-w-[60px] text-xs sm:text-sm">Palette {i + 1}</th>
+                        <th key={i} className="py-2 px-3 border">Palette {i + 1}</th>
                       ))}
-                      <th className="py-2 px-2 sm:px-3 border bg-green-200 min-w-[70px] sm:min-w-[80px] text-xs sm:text-sm">Moyenne</th>
+                      <th className="py-2 px-3 border bg-green-200">Moyenne</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="py-2 px-2 sm:px-3 border min-w-[160px] sm:min-w-[200px] text-xs sm:text-sm">Calibre</td>
+                      <td className="py-2 px-3 border w-64 min-w-64">Calibre</td>
                       {Array.from({ length: paletteCount }).map((_, i) => (
-                        <td key={i} className="py-1 px-1 sm:px-2 border min-w-[50px] sm:min-w-[60px]">
+                        <td key={i} className="py-1 px-2 border">
                           <input
                             type="number"
                             step="0.1"
                             min="0"
                             value={getCurrentFormData().palettes[i]?.size || ''}
                             onChange={(e) => handlePaletteChange(i, 'size', e.target.value)}
-                            className="w-full p-1 border border-gray-200 rounded text-center text-xs sm:text-sm"
+                            className="w-full p-1 border border-gray-200 rounded text-center"
                           />
                         </td>
                       ))}
@@ -3400,32 +3268,30 @@ export default function EnhancedPDFGenerator() {
                     </tr>
                   </tbody>
                 </table>
-                </div>
               </div>
             )}
             
             {/* Tolérance Tab */}
             {activeTab === 5 && (
-              <div className="mb-6 sm:mb-10">
-                <h2 className="text-lg sm:text-xl font-bold text-green-700 mb-3 sm:mb-4 border-b pb-2 flex items-center gap-2">
+              <div className="overflow-x-auto mb-10">
+                <h2 className="text-xl font-bold text-green-700 mb-4 border-b pb-2 flex items-center gap-2">
                   V) Tolérance
                   <Tooltip title="Vérification des tolérances appliquées."><InfoOutlinedIcon fontSize="inherit" /></Tooltip>
                 </h2>
-                <div className="overflow-x-auto border rounded-lg shadow-md bg-white">
-                <table className="min-w-full bg-white border-collapse">
+                <table className="min-w-full bg-white border-collapse rounded-lg shadow-md">
                   <thead>
                     <tr className="bg-green-100">
-                      <th className="py-2 px-2 sm:px-3 border text-xs sm:text-sm">Tolérance</th>
-                      <th className="py-2 px-2 sm:px-3 border text-xs sm:text-sm">Résultat moyen</th>
-                      <th className="py-2 px-2 sm:px-3 border text-xs sm:text-sm">Conforme</th>
-                      <th className="py-2 px-2 sm:px-3 border text-xs sm:text-sm">Non conforme</th>
+                      <th className="py-2 px-3 border">Tolérance</th>
+                      <th className="py-2 px-3 border">Résultat moyen</th>
+                      <th className="py-2 px-3 border">Conforme</th>
+                      <th className="py-2 px-3 border">Non conforme</th>
                     </tr>
                   </thead>
                   <tbody>
                     {/* Caractéristiques minimales (≤ 10%) */}
                     <tr>
-                      <td className="py-2 px-2 sm:px-3 border text-xs sm:text-sm">Caractéristiques minimales (≤ 10%)</td>
-                      <td className="py-1 px-1 sm:px-2 border text-center text-xs sm:text-sm">
+                      <td className="py-2 px-3 border">Caractéristiques minimales (≤ 10%)</td>
+                      <td className="py-1 px-2 border text-center">
                         {(() => {
                           // Sum of relevant fields for each palette, then average
                           let sum = 0, count = 0;
@@ -3511,7 +3377,6 @@ export default function EnhancedPDFGenerator() {
                     </tr>
                   </tbody>
                 </table>
-                </div>
               </div>
             )}
           </div>
@@ -3530,4 +3395,4 @@ const sanitizeText = (text: string) =>
     .replace(/≤/g, '<=')
     .replace(/≥/g, '>=')
     .replace(/✗/g, 'x')
-    .replace(/[^a-zA-Z0-9À-ÿ ,.\-_=+()\/\\\n\r<>]/g, '');
+    .replace(/[^a-zA-Z0-9 .,;:!?'"()\-_/\\@#&+=<>%$€£\n\r]/g, '');

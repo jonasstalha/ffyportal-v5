@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { FilePlus, Plus, RefreshCw, Save, Trash2, Archive, Edit, X, Menu, ChevronDown, AlertCircle, CheckCircle, Download, Upload, Search, Eye, Share2 } from 'lucide-react';
+import { FilePlus, Plus, RefreshCw, Save, Trash2, Archive, Edit, X, Menu, ChevronDown, AlertCircle, CheckCircle, Download, Upload, Search, Eye, Share2, Settings } from 'lucide-react';
 import { db, auth } from '../../lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../../lib/firebase"; // adjust path]
-import { getStorage, } from "firebase/storage";
-
+import { storage } from "../../lib/firebase";
+import { getStorage } from "firebase/storage";
 import {
   collection,
   getDocs,
@@ -17,17 +16,11 @@ import {
   where,
   orderBy
 } from 'firebase/firestore';
-import { jsPDF } from 'jspdf';
-// TypeScript declarations for external libraries
-declare global {
-  interface Window {
-    jspdf?: {
-      jsPDF: any;
-    };
-  }
-}
 
-// Enhanced media queries hook
+// Import jsPDF correctly
+import jsPDF from 'jspdf';
+
+// Enhanced media queries hook for all screen sizes
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
   useEffect(() => {
@@ -71,44 +64,33 @@ interface ReceptionFormData {
   status?: 'draft' | 'submitted' | 'archived';
 }
 
-// Options arrays
-const VARIETY_OPTIONS = [
-  'HASS',
-  'ZUTANO',
-  'DECHET',
-  'FUERTY'
+// Default options that will be synced with Firebase
+const DEFAULT_VARIETY_OPTIONS = ['HASS', 'ZUTANO', 'DECHET', 'FUERTY'];
+const DEFAULT_MATRICULE_OPTIONS = ['23071 A 59', '20252 B 26', '33971 A 59', '15427 A 51', '630 A 78', '12577 A 45'];
+const DEFAULT_CHAUFFEUR_OPTIONS = ['MOHAMMED', 'ABDELLAH', 'SOUHAIL', 'IMADD', 'TRACH', 'IMAAD'];
+const DEFAULT_LIEU_OPTIONS = [
+  'lmnzah', 'ain ariss', 'sid taibi', 'sale', 'bouknadel', 'rabat', 
+  'skhirat', 'laarjat', 'tiflet', 'ould agil', 'dar jdida', 'DELLALHA', 
+  'TNIN SID EL YAMANI', 'TNIN AIN FELFEL', 'OUKAD', 'LAANABSA', 'BELIL', 
+  'laawamra', 'MOULAY BOUSLHAM', 'oulad mesbah', 'oulad berjal'
 ];
 
-const MATRICULE_OPTIONS = [
-  '23071 A 59',
-  '20252 B 26',
-  '33971 A 59',
-  '630 A 78'
-];
-
-const CHAUFFEUR_OPTIONS = [
-  'MOHAMMED',
-  'ABDELLAH',
-  'SOUHAIL',
-  'IMADD'
-];
-
-const LIEU_OPTIONS = [
-  'DELLALHA',
-  'TNIN',
-  'OUKAD',
-  'LAANABSA',
-  'MOULAY BOUSLHAM'
-];
+// Firebase collections for options
+const OPTIONS_COLLECTIONS = {
+  variety: 'varietyOptions',
+  matricule: 'matriculeOptions',
+  chauffeur: 'chauffeurOptions',
+  lieu: 'lieuOptions'
+};
 
 const defaultReceptionForm = (category: 'conventionnel' | 'biologique'): ReceptionFormData => ({
   category,
   header: {
-    title: 'Reception Avocat 2024/2025',
+    title: 'Reception Avocat 2025/2026',
     dateReport: new Date().toISOString().split('T')[0],
     responsable: auth.currentUser?.email || '',
     bonLivraison: '',
-    compagne: '2024/2025'
+    compagne: '2025/2026'
   },
   rows: Array.from({ length: 1 }, () => ({
     date: new Date().toISOString().split('T')[0],
@@ -125,19 +107,140 @@ const defaultReceptionForm = (category: 'conventionnel' | 'biologique'): Recepti
   status: 'draft'
 });
 
-// Combobox Component for typing and selecting
+// Options Management Modal Component
+const OptionsManagementModal = ({
+  isOpen,
+  onClose,
+  options,
+  onOptionsUpdate,
+  title,
+  placeholder
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  options: string[];
+  onOptionsUpdate: (options: string[]) => void;
+  title: string;
+  placeholder: string;
+}) => {
+  const [localOptions, setLocalOptions] = useState<string[]>([]);
+  const [newOption, setNewOption] = useState('');
+
+  useEffect(() => {
+    setLocalOptions(options);
+  }, [options]);
+
+  const addOption = () => {
+    if (newOption.trim() && !localOptions.includes(newOption.trim())) {
+      const updatedOptions = [...localOptions, newOption.trim()];
+      setLocalOptions(updatedOptions);
+      setNewOption('');
+    }
+  };
+
+  const removeOption = (optionToRemove: string) => {
+    const updatedOptions = localOptions.filter(opt => opt !== optionToRemove);
+    setLocalOptions(updatedOptions);
+  };
+
+  const saveOptions = () => {
+    onOptionsUpdate(localOptions);
+    onClose();
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      addOption();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+        <div className="flex justify-between items-center p-6 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={24} />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-hidden p-6">
+          <div className="flex gap-2 mb-4">
+            <input
+              type="text"
+              value={newOption}
+              onChange={(e) => setNewOption(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={placeholder}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:border-green-500 focus:ring-1 focus:ring-green-200 outline-none"
+            />
+            <button
+              onClick={addOption}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+            >
+              Ajouter
+            </button>
+          </div>
+          
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-60 overflow-y-auto">
+            {localOptions.map((option, index) => (
+              <div
+                key={index}
+                className="flex justify-between items-center p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+              >
+                <span className="text-gray-700">{option}</span>
+                <button
+                  onClick={() => removeOption(option)}
+                  className="text-red-500 hover:text-red-700 p-1"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            {localOptions.length === 0 && (
+              <div className="p-4 text-center text-gray-500">
+                Aucune option disponible
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 font-medium"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={saveOptions}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+          >
+            Sauvegarder
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Enhanced Combobox Component with options management
 const Combobox = ({
   value,
   onChange,
   options,
   placeholder = "Taper ou sélectionner...",
-  className = ""
+  className = "",
+  onManageOptions
 }: {
   value: string;
   onChange: (value: string) => void;
   options: string[];
   placeholder?: string;
   className?: string;
+  onManageOptions?: () => void;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value);
@@ -151,15 +254,17 @@ const Combobox = ({
     const newValue = e.target.value;
     setInputValue(newValue);
 
-    // Filter options based on input
     const filtered = options.filter(option =>
       option.toLowerCase().includes(newValue.toLowerCase())
     );
     setFilteredOptions(filtered);
 
-    // Keep dropdown open when typing
     if (!isOpen) {
       setIsOpen(true);
+    }
+
+    if (options.includes(newValue)) {
+      onChange(newValue);
     }
   };
 
@@ -167,16 +272,27 @@ const Combobox = ({
     setInputValue(option);
     onChange(option);
     setIsOpen(false);
+    setFilteredOptions(options);
   };
 
   const handleBlur = () => {
-    // Small delay to allow click on options
-    setTimeout(() => setIsOpen(false), 200);
+    setTimeout(() => {
+      setIsOpen(false);
+      if (!options.includes(inputValue) && value) {
+        setInputValue(value);
+      }
+    }, 200);
   };
 
   const handleFocus = () => {
     setFilteredOptions(options);
     setIsOpen(true);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && filteredOptions.length > 0 && !options.includes(inputValue)) {
+      handleSelect(filteredOptions[0]);
+    }
   };
 
   return (
@@ -187,25 +303,37 @@ const Combobox = ({
         onChange={handleInputChange}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 transition outline-none pr-10"
+        className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 transition outline-none pr-20"
       />
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-400 hover:text-gray-600"
-      >
-        <ChevronDown size={16} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
+      <div className="absolute inset-y-0 right-0 flex items-center">
+        {onManageOptions && (
+          <button
+            type="button"
+            onClick={onManageOptions}
+            className="p-1 text-gray-400 hover:text-gray-600 mr-1"
+            title="Gérer les options"
+          >
+            <Settings size={14} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="h-full px-2 text-gray-400 hover:text-gray-600 border-l border-gray-200"
+        >
+          <ChevronDown size={16} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
 
-      {/* Dropdown Options */}
       {isOpen && filteredOptions.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
           {filteredOptions.map((option, index) => (
             <div
               key={index}
               onClick={() => handleSelect(option)}
-              className="px-3 py-2 cursor-pointer hover:bg-green-50 hover:text-green-700 transition"
+              className="px-3 py-2 cursor-pointer hover:bg-green-50 hover:text-green-700 transition border-b border-gray-100 last:border-b-0"
             >
               {option}
             </div>
@@ -232,10 +360,23 @@ function SuiviReception() {
   const [allReceptionsData, setAllReceptionsData] = useState<ReceptionFormData[]>([]);
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
 
-  // Enhanced media queries for all screen sizes
+  // Options state with Firebase sync
+  const [varietyOptions, setVarietyOptions] = useState<string[]>(DEFAULT_VARIETY_OPTIONS);
+  const [matriculeOptions, setMatriculeOptions] = useState<string[]>(DEFAULT_MATRICULE_OPTIONS);
+  const [chauffeurOptions, setChauffeurOptions] = useState<string[]>(DEFAULT_CHAUFFEUR_OPTIONS);
+  const [lieuOptions, setLieuOptions] = useState<string[]>(DEFAULT_LIEU_OPTIONS);
+
+  // Options management modals
+  const [showVarietyModal, setShowVarietyModal] = useState(false);
+  const [showMatriculeModal, setShowMatriculeModal] = useState(false);
+  const [showChauffeurModal, setShowChauffeurModal] = useState(false);
+  const [showLieuModal, setShowLieuModal] = useState(false);
+
+  // Enhanced media queries for all screen sizes including small PCs
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isTablet = useMediaQuery('(min-width: 769px) and (max-width: 1024px)');
-  const isSmallDesktop = useMediaQuery('(min-width: 1025px) and (max-width: 1440px)');
+  const isSmallDesktop = useMediaQuery('(min-width: 1025px) and (max-width: 1280px)');
+  const isMediumDesktop = useMediaQuery('(min-width: 1281px) and (max-width: 1440px)');
   const isLargeDesktop = useMediaQuery('(min-width: 1441px)');
 
   // Get current screen size for responsive adjustments
@@ -243,11 +384,89 @@ function SuiviReception() {
     if (isMobile) return 'mobile';
     if (isTablet) return 'tablet';
     if (isSmallDesktop) return 'small-desktop';
+    if (isMediumDesktop) return 'medium-desktop';
     if (isLargeDesktop) return 'large-desktop';
     return 'desktop';
   };
 
   const screenSize = getScreenSize();
+
+  // Firebase options management functions
+  const loadOptionsFromFirebase = async (collectionName: string, defaultOptions: string[]): Promise<string[]> => {
+    try {
+      const optionsRef = collection(db, collectionName);
+      const querySnapshot = await getDocs(optionsRef);
+      
+      if (querySnapshot.empty) {
+        // If no options exist, create default ones
+        await Promise.all(defaultOptions.map(async (option) => {
+          await addDoc(optionsRef, { name: option, createdAt: serverTimestamp() });
+        }));
+        return defaultOptions;
+      }
+      
+      const options = querySnapshot.docs.map(doc => doc.data().name);
+      return options.length > 0 ? options : defaultOptions;
+    } catch (error) {
+      console.error(`Error loading ${collectionName}:`, error);
+      return defaultOptions;
+    }
+  };
+
+  const saveOptionsToFirebase = async (collectionName: string, options: string[]) => {
+    try {
+      // Clear existing options
+      const optionsRef = collection(db, collectionName);
+      const querySnapshot = await getDocs(optionsRef);
+      
+      await Promise.all(querySnapshot.docs.map(async (docSnap) => {
+        await deleteDoc(doc(db, collectionName, docSnap.id));
+      }));
+      
+      // Add new options
+      await Promise.all(options.map(async (option) => {
+        await addDoc(optionsRef, { 
+          name: option, 
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }));
+      
+      return true;
+    } catch (error) {
+      console.error(`Error saving ${collectionName}:`, error);
+      return false;
+    }
+  };
+
+  // Load all options on component mount
+  useEffect(() => {
+    const loadAllOptions = async () => {
+      try {
+        const [
+          varietyOpts,
+          matriculeOpts,
+          chauffeurOpts,
+          lieuOpts
+        ] = await Promise.all([
+          loadOptionsFromFirebase(OPTIONS_COLLECTIONS.variety, DEFAULT_VARIETY_OPTIONS),
+          loadOptionsFromFirebase(OPTIONS_COLLECTIONS.matricule, DEFAULT_MATRICULE_OPTIONS),
+          loadOptionsFromFirebase(OPTIONS_COLLECTIONS.chauffeur, DEFAULT_CHAUFFEUR_OPTIONS),
+          loadOptionsFromFirebase(OPTIONS_COLLECTIONS.lieu, DEFAULT_LIEU_OPTIONS)
+        ]);
+
+        setVarietyOptions(varietyOpts);
+        setMatriculeOptions(matriculeOpts);
+        setChauffeurOptions(chauffeurOpts);
+        setLieuOptions(lieuOpts);
+      } catch (error) {
+        console.error('Error loading options:', error);
+        showNotification('error', 'Erreur lors du chargement des options');
+      }
+    };
+
+    loadAllOptions();
+  }, []);
 
   // Enhanced fetch all receptions with real data
   const fetchAllReceptions = async () => {
@@ -337,9 +556,21 @@ function SuiviReception() {
     const feurte = parseFloat(rows[index].feurte) || 0;
     const pnTicket = parseFloat(rows[index].poidsNetTicket) || 0;
     const dechet = parseFloat(rows[index].dechet) || 0;
-    rows[index].ecart = String(pnUsine + dechet + feurte - pnTicket);
+    rows[index].ecart = (pnUsine + dechet + feurte - pnTicket).toFixed(2);
 
     updateForm({ rows });
+  };
+
+  // Helper function to extract numbers from Bon Livraison for proper sorting
+  const extractNumberFromBonLivraison = (bonLivraison: string | undefined): number => {
+    if (!bonLivraison) return 0;
+    
+    const numbers = bonLivraison.match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      return parseInt(numbers[0], 10);
+    }
+    
+    return 0;
   };
 
   const addRow = () => {
@@ -403,7 +634,7 @@ function SuiviReception() {
     }
   };
 
-  // Enhanced CRUD operations
+  // Enhanced CRUD operations - Single save function
   const saveReception = async (status: 'draft' | 'submitted' = 'submitted') => {
     if (status === 'submitted' && !form.rows.some(r => r.poidsNetUsine)) {
       showNotification('error', 'Veuillez remplir au moins une ligne avant de soumettre');
@@ -422,17 +653,30 @@ function SuiviReception() {
 
       let savedDocId = editingArchiveId;
 
-      if (editingArchiveId) {
-        // UPDATE existing document
-        const docRef = doc(db, "receptions", editingArchiveId);
-        await updateDoc(docRef, dataToSave);
-        showNotification('success', `Réception ${status === 'draft' ? 'brouillon' : ''} mise à jour`);
-      } else {
-        // CREATE new document
-        const newDoc = await addDoc(collection(db, "receptions"), dataToSave);
-        savedDocId = newDoc.id;
-        showNotification('success', `Réception ${status === 'draft' ? 'brouillon' : ''} enregistrée`);
-      }
+if (editingArchiveId) {
+  // SAFE UPDATE or CREATE if missing
+  const docRef = doc(db, "receptions", editingArchiveId);
+
+  await setDoc(docRef, dataToSave, { merge: true });
+
+  showNotification(
+    'success',
+    `Réception ${status === 'draft' ? 'brouillon' : ''} mise à jour`
+  );
+
+  savedDocId = editingArchiveId;
+
+} else {
+  // CREATE new document
+  const newDoc = await addDoc(collection(db, "receptions"), dataToSave);
+  savedDocId = newDoc.id;
+
+  showNotification(
+    'success',
+    `Réception ${status === 'draft' ? 'brouillon' : ''} enregistrée`
+  );
+}
+
 
       // Refresh all data
       await fetchAllReceptions();
@@ -513,6 +757,7 @@ function SuiviReception() {
       showNotification('error', `Erreur lors de la suppression: ${error.message}`);
     }
   };
+
   // Enhanced reset function
   const resetForm = () => {
     if (editingArchiveId && !window.confirm('Voulez-vous vraiment abandonner les modifications ? Les changements non sauvegardés seront perdus.')) {
@@ -530,6 +775,47 @@ function SuiviReception() {
     setShowArchive(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     showNotification('info', 'Mode consultation - Cliquez sur "Nouveau" pour créer une nouvelle réception');
+  };
+
+  // Options management handlers
+  const handleUpdateVarietyOptions = async (newOptions: string[]) => {
+    const success = await saveOptionsToFirebase(OPTIONS_COLLECTIONS.variety, newOptions);
+    if (success) {
+      setVarietyOptions(newOptions);
+      showNotification('success', 'Options de variété mises à jour');
+    } else {
+      showNotification('error', 'Erreur lors de la mise à jour des options');
+    }
+  };
+
+  const handleUpdateMatriculeOptions = async (newOptions: string[]) => {
+    const success = await saveOptionsToFirebase(OPTIONS_COLLECTIONS.matricule, newOptions);
+    if (success) {
+      setMatriculeOptions(newOptions);
+      showNotification('success', 'Options de matricule mises à jour');
+    } else {
+      showNotification('error', 'Erreur lors de la mise à jour des options');
+    }
+  };
+
+  const handleUpdateChauffeurOptions = async (newOptions: string[]) => {
+    const success = await saveOptionsToFirebase(OPTIONS_COLLECTIONS.chauffeur, newOptions);
+    if (success) {
+      setChauffeurOptions(newOptions);
+      showNotification('success', 'Options de chauffeur mises à jour');
+    } else {
+      showNotification('error', 'Erreur lors de la mise à jour des options');
+    }
+  };
+
+  const handleUpdateLieuOptions = async (newOptions: string[]) => {
+    const success = await saveOptionsToFirebase(OPTIONS_COLLECTIONS.lieu, newOptions);
+    if (success) {
+      setLieuOptions(newOptions);
+      showNotification('success', 'Options de lieu mises à jour');
+    } else {
+      showNotification('error', 'Erreur lors de la mise à jour des options');
+    }
   };
 
   // Filter archives based on search term
@@ -561,7 +847,7 @@ function SuiviReception() {
 
   const stats = getStatistics();
 
-  // Enhanced PDF generation with WhatsApp sharing
+  // SIMPLE PDF GENERATION WITHOUT AUTOTABLE
   const generatePDF = async (forWhatsApp: boolean = false): Promise<Blob | null> => {
     try {
       if (forWhatsApp) {
@@ -607,89 +893,98 @@ function SuiviReception() {
       const margin = 15;
       let yPos = margin;
 
-      // Header
-      doc.setFillColor(139, 195, 74);
-      doc.rect(0, 0, pageWidth, 35, 'F');
+      // ENHANCED Header with better contrast
+      doc.setFillColor(34, 84, 61);
+      doc.rect(0, 0, pageWidth, 40, 'F');
 
-      // Title
-      doc.setFontSize(18);
+      // ENHANCED Title with better spacing
+      doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text(`RECEPTION AVOCAT ${form.header.compagne}`, pageWidth / 2, 15, { align: 'center' });
+      doc.setTextColor(255, 255, 255);
+      doc.text(`RAPPORT DE RÉCEPTION AVOCAT`, pageWidth / 2, 18, { align: 'center' });
+
+      doc.setFontSize(16);
+      doc.text(`Campagne 2025/2026`, pageWidth / 2, 28, { align: 'center' });
 
       doc.setFontSize(14);
-      doc.text(`${activeTab === 'biologique' ? 'BIOLOGIQUE' : 'CONVENTIONNEL'}`, pageWidth / 2, 25, { align: 'center' });
+      doc.text(`${activeTab === 'biologique' ? 'BIOLOGIQUE' : 'CONVENTIONNEL'}`, pageWidth / 2, 35, { align: 'center' });
 
-      yPos = 40;
+      yPos = 45;
 
-      // Information Table
-      doc.setFillColor(240, 240, 240);
-      doc.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.3);
-      doc.rect(margin, yPos, pageWidth - 2 * margin, 20);
+      // ENHANCED Information Table
+      doc.setFillColor(248, 250, 252);
+      doc.rect(margin, yPos, pageWidth - 2 * margin, 25, 'F');
+      doc.setDrawColor(100, 100, 100);
+      doc.setLineWidth(0.5);
+      doc.rect(margin, yPos, pageWidth - 2 * margin, 25);
 
-      // Info content
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
 
-      doc.text('Date:', margin + 5, yPos + 7);
-      doc.text(formatDate(form.header.dateReport), margin + 20, yPos + 7);
+      doc.text('Date Rapport:', margin + 8, yPos + 9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(formatDate(form.header.dateReport), margin + 35, yPos + 9);
 
-      doc.text('Responsable:', margin + 80, yPos + 7);
-      doc.text(form.header.responsable || 'Non spécifié', margin + 110, yPos + 7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Responsable:', margin + 90, yPos + 9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(form.header.responsable || 'Non spécifié', margin + 120, yPos + 9);
 
-      doc.text('Bon Livraison:', margin + 180, yPos + 7);
-      doc.text(form.header.bonLivraison || 'N/A', margin + 210, yPos + 7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Bon Livraison:', margin + 180, yPos + 9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(form.header.bonLivraison || 'N/A', margin + 215, yPos + 9);
 
-      doc.text('Total Lignes:', pageWidth - margin - 50, yPos + 7);
-      doc.text(form.rows.length.toString(), pageWidth - margin - 15, yPos + 7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Site:', margin + 8, yPos + 18);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Fruits For You', margin + 25, yPos + 18);
 
-      // Row 2
-      doc.text('Site:', margin + 5, yPos + 15);
-      doc.text('Fruits For You', margin + 20, yPos + 15);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Compagne:', margin + 90, yPos + 18);
+      doc.setFont('helvetica', 'normal');
+      doc.text('2025/2026', margin + 120, yPos + 18);
 
-      doc.text('Compagne:', margin + 80, yPos + 15);
-      doc.text(form.header.compagne, margin + 110, yPos + 15);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Total Lignes:', margin + 180, yPos + 18);
+      doc.setFont('helvetica', 'normal');
+      doc.text(form.rows.length.toString(), margin + 215, yPos + 18);
 
-      doc.text('Catégorie:', margin + 180, yPos + 15);
-      doc.text(activeTab === 'biologique' ? 'Biologique' : 'Conventionnel', margin + 210, yPos + 15);
+      yPos += 30;
 
-      yPos += 25;
-
-      // Prepare table data
+      // ENHANCED Table data preparation
       const totals = calculateTotals();
       const tableData = form.rows.map(r => [
         formatDate(r.date),
-        r.matricule,
-        r.chauffeur,
-        r.nlotInterne || '',
-        (parseFloat(r.poidsNetUsine) || 0).toString(),
-        (parseFloat(r.dechet) || 0).toString(),
-        (parseFloat(r.feurte) || 0).toString(),
-        (parseFloat(r.poidsNetTicket) || 0).toString(),
-        computeEcartRow(r).toString(),
-        r.leLieu,
-        r.variete
+        r.matricule || '-',
+        r.chauffeur || '-',
+        r.nlotInterne || '-',
+        (parseFloat(r.poidsNetUsine) || 0).toFixed(0),
+        (parseFloat(r.dechet) || 0).toFixed(0),
+        (parseFloat(r.feurte) || 0).toFixed(0),
+        (parseFloat(r.poidsNetTicket) || 0).toFixed(0),
+        computeEcartRow(r).toFixed(0),
+        r.leLieu || '-',
+        r.variete || '-'
       ]);
 
-      // Add totals row
+      // ENHANCED Totals row
       tableData.push([
-        'TOTAL',
+        'TOTAL GÉNÉRAL',
         '',
         '',
         '',
-        totals.totalPoidsNetUsine.toString(),
-        totals.totalDechet.toString(),
-        totals.totalFeurte.toString(),
-        totals.totalPoidsNetTicket.toString(),
-        totals.totalEcart.toString(),
+        totals.totalPoidsNetUsine.toFixed(0),
+        totals.totalDechet.toFixed(0),
+        totals.totalFeurte.toFixed(0),
+        totals.totalPoidsNetTicket.toFixed(0),
+        totals.totalEcart.toFixed(0),
         '',
         ''
       ]);
 
-      // Generate main table
+      // ENHANCED Main table with better styling
       (doc as any).autoTable({
         startY: yPos,
         head: [
@@ -710,50 +1005,78 @@ function SuiviReception() {
         body: tableData,
         theme: 'grid',
         headStyles: {
-          fillColor: [139, 195, 74],
-          textColor: [0, 0, 0],
+          fillColor: [34, 84, 61],
+          textColor: [255, 255, 255],
           fontSize: 9,
           fontStyle: 'bold',
-          halign: 'center'
+          halign: 'center',
+          cellPadding: 4,
+          lineWidth: 0.3
         },
-        styles: {
+        bodyStyles: {
           fontSize: 8,
           cellPadding: 3,
           halign: 'center',
-          lineWidth: 0.3
+          lineWidth: 0.3,
+          textColor: [0, 0, 0]
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        styles: {
+          lineWidth: 0.3,
+          lineColor: [100, 100, 100]
         },
         didParseCell: function (data: any) {
           if (data.row.index === tableData.length - 1) {
             data.cell.styles.fillColor = [139, 195, 74];
             data.cell.styles.textColor = [0, 0, 0];
             data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fontSize = 9;
           }
-        }
+          
+          if (data.column.index === 8 && data.row.index < tableData.length - 1) {
+            const ecartValue = parseFloat(data.cell.raw);
+            if (ecartValue < 0) {
+              data.cell.styles.fillColor = [255, 230, 230];
+              data.cell.styles.textColor = [200, 0, 0];
+            }
+          }
+        },
+        margin: { left: margin, right: margin }
       });
 
-      // Footer
-      const finalY = pageHeight - 15;
-      doc.setFillColor(240, 240, 240);
-      doc.rect(0, finalY, pageWidth, 15, 'F');
+      // ENHANCED Footer
+      const finalY = pageHeight - 20;
+      doc.setFillColor(34, 84, 61);
+      doc.rect(0, finalY, pageWidth, 20, 'F');
 
-      doc.setFontSize(8);
+      doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(0, 0, 0);
+      doc.setTextColor(255, 255, 255);
+
+      const currentDate = new Date().toLocaleDateString('fr-FR');
+      const currentTime = new Date().toLocaleTimeString('fr-FR');
+      
+      doc.text(
+        `Fruits For You - Système de Gestion des Réceptions - Généré le ${currentDate} à ${currentTime}`,
+        pageWidth / 2,
+        finalY + 8,
+        { align: 'center' }
+      );
 
       doc.text(
-        `Fruits For You - Réception Avocat ${form.header.compagne} - Généré le ${new Date().toLocaleDateString('fr-FR')}`,
+        `Page 1/1 - ${form.rows.length} lignes traitées`,
         pageWidth / 2,
-        finalY + 10,
+        finalY + 14,
         { align: 'center' }
       );
 
       if (forWhatsApp) {
-        // Return PDF as Blob for WhatsApp sharing
         const pdfBlob = doc.output('blob');
         return pdfBlob;
       } else {
-        // Save PDF locally
-        const filename = `Reception_Avocat_${activeTab}_${formatDate(form.header.dateReport)}.pdf`;
+        const filename = `Reception_Avocat_${activeTab}_${form.header.compagne}_${formatDate(form.header.dateReport)}.pdf`;
         doc.save(filename);
         showNotification('success', 'PDF généré avec succès');
         return null;
@@ -765,184 +1088,58 @@ function SuiviReception() {
     }
   };
 
-  // WhatsApp sharing function - DIRECT PDF SENDING
-  const shareViaWhatsApp = async () => {
-    if (!form.rows.some(r => r.poidsNetUsine)) {
-      showNotification('error', 'Veuillez remplir au moins une ligne avant de partager');
-      return;
-    }
-
-    setIsSendingWhatsApp(true);
-    try {
-      // Generate PDF as Blob
-      const pdfBlob = await generatePDF(true);
-
-      if (!pdfBlob) {
-        throw new Error('Échec de la génération du PDF');
-      }
-
-      // Create a File object from the Blob
-      const pdfFile = new File(
-        [pdfBlob],
-        `Reception_Avocat_${activeTab}_${formatDate(form.header.dateReport)}.pdf`,
-        { type: 'application/pdf' }
-      );
-
-      // METHOD 1: Using Web Share API (Mobile devices)
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-        try {
-          await navigator.share({
-            title: `Réception Avocat ${activeTab === 'biologique' ? 'Biologique' : 'Conventionnel'}`,
-            text: `Rapport de Réception Avocat - ${formatDate(form.header.dateReport)}`,
-            files: [pdfFile]
-          });
-          showNotification('success', 'PDF partagé avec succès via WhatsApp');
-          return;
-        } catch (shareError) {
-          console.log('Web Share API failed, trying fallback method...');
-        }
-      }
-
-      const pdfUrl = "https://firebasestorage.googleapis.com/v0/b/fruitsforyou-10acc.firebasestorage.app/o/reports%2FRapport_1762939863757.pdf?alt=media&token=3d7d2e9a-fcdb-4aea-b5c2-c55d1c537a86";
-
-      // METHOD 3: Open WhatsApp with message instructing to send the downloaded file
-      const message = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
-        `   RAPPORT RÉCEPTION AVOCAT\n` +
-        `      ${activeTab === 'biologique' ? 'BIO' : 'CONVENTIONNEL'}\n` +
-        `▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n` +
-        `◉ Date: ${formatDate(form.header.dateReport)}\n` +
-        `◉ Responsable: ${form.header.responsable}\n` +
-        `◉ Bon Livraison: ${form.header.bonLivraison || 'N/A'}\n` +
-        `◉ Nombre de Lignes: ${form.rows.length}\n\n` +
-        `⚖️  TOTAUX  ⚖️\n` +
-        `● Poids Net Usine: ${calculateTotals().totalPoidsNetUsine.toFixed(0)} kg\n` +
-        `● Déchet: ${calculateTotals().totalDechet.toFixed(0)} kg\n` +
-        `● Feurte: ${calculateTotals().totalFeurte.toFixed(0)} kg\n` +
-        `● Poids Net Ticket: ${calculateTotals().totalPoidsNetTicket.toFixed(0)} kg\n` +
-        `● Écart Total: ${calculateTotals().totalEcart.toFixed(0)} kg\n\n` +
-        `📄 Le fichier PDF est prêt.\n` +
-        `📥 Télécharger le PDF: ${fileLink}\n\n` +
-        `Veuillez le partager via WhatsApp.`;
-
-      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
-
-      const whatsappUrl = `https://wa.me/212628183794?text=${encodedMessage}`;
-
-      // Open WhatsApp in new tab
-      window.open(whatsappUrl, '_blank');
-
-      showNotification('info', 'PDF téléchargé - Ouvrez WhatsApp pour envoyer le fichier');
-
-    } catch (error: any) {
-      console.error('Error sharing via WhatsApp:', error);
-      showNotification('error', `Erreur lors de l'envoi: ${error.message}`);
-    } finally {
-      setIsSendingWhatsApp(false);
-    }
-  };
-
-  // Alternative method for desktop - using WhatsApp Business API
-  const shareViaWhatsAppDesktop = async () => {
-    if (!form.rows.some(r => r.poidsNetUsine)) {
-      showNotification('error', 'Veuillez remplir au moins une ligne avant de partager');
-      return;
-    }
-
-    setIsSendingWhatsApp(true);
-    try {
-      // Generate PDF as data URL
-      const pdfBlob = await generatePDF(true);
-      if (!pdfBlob) throw new Error('Échec de la génération du PDF');
-
-      const pdfDataUrl = URL.createObjectURL(pdfBlob);
-
-      // Create a temporary link to download the file
-      const downloadLink = document.createElement('a');
-      downloadLink.href = pdfDataUrl;
-      downloadLink.download = `Reception_Avocat_${activeTab}_${formatDate(form.header.dateReport)}.pdf`;
-
-      // Create instructions for user
-      const instructions = `
-        📋 INSTRUCTIONS POUR ENVOYER LE PDF SUR WHATSAPP:
-
-        1. Le fichier PDF a été téléchargé automatiquement
-        2. Ouvrez WhatsApp sur votre téléphone
-        3. Recherchez le contact: 0628183794
-        4. Envoyez le fichier PDF que vous venez de télécharger
-        5. Ajoutez ce message si nécessaire:
-
-        "Rapport Réception Avocat ${activeTab === 'biologique' ? 'BIO' : 'CONV'}
-        Date: ${formatDate(form.header.dateReport)}
-        Responsable: ${form.header.responsable}
-        Total poids: ${calculateTotals().totalPoidsNetUsine.toFixed(0)} kg"
-      `;
-
-      // Download the file
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-
-      // Show detailed instructions
-      alert(instructions);
-      showNotification('success', 'PDF téléchargé - Suivez les instructions pour envoyer sur WhatsApp');
-
-    } catch (error: any) {
-      console.error('Error in WhatsApp desktop sharing:', error);
-      showNotification('error', `Erreur: ${error.message}`);
-    } finally {
-      setIsSendingWhatsApp(false);
-    }
-  };
-
-  // Main WhatsApp function that chooses the right method
-  const handleWhatsAppShare = async () => {
-    // For mobile devices, try direct share first
-    if (isMobile) {
-      await shareViaWhatsApp();
-    } else {
-      // For desktop, use the desktop method
-      await shareViaWhatsAppDesktop();
-    }
-  };
-
+  // Enhanced WhatsApp sharing
   const sendReportToWhatsApp = async () => {
+    if (!form.rows.some(r => r.poidsNetUsine)) {
+      showNotification('error', 'Veuillez remplir au moins une ligne avant de partager');
+      return;
+    }
+
+    setIsSendingWhatsApp(true);
     try {
       showNotification('info', 'Préparation du PDF...');
 
-      // ✅ 1️⃣ Generate the styled PDF (your full design)
       const pdfBlob = await generatePDF(true);
-      if (!pdfBlob) throw new Error("Échec de la génération du PDF");
+      if (!pdfBlob) {
+        throw new Error("Échec de la génération du PDF");
+      }
 
-      showNotification('info', 'Téléversement du PDF sur le cloud...');
+      showNotification('info', 'Téléversement du PDF...');
 
-      // ✅ 2️⃣ Upload to Firebase
       const storage = getStorage();
       const fileName = `reports/Rapport_${Date.now()}.pdf`;
       const pdfRef = ref(storage, fileName);
       await uploadBytes(pdfRef, pdfBlob);
       const fileLink = await getDownloadURL(pdfRef);
 
-      console.log("✅ Lien du rapport:", fileLink);
-
-      // ✅ 3️⃣ Send WhatsApp message with link
-      const phoneNumber = "212601902159"; // change if needed
+      const totals = calculateTotals();
       const message =
-        `📊 Rapport Réception Avocat ${activeTab === 'biologique' ? 'BIOLOGIQUE' : 'CONVENTIONNEL'}\n` +
-        `👤 Responsable: ${form.header.responsable || 'Non spécifié'}\n` +
-        `📦 Bon Livraison: ${form.header.bonLivraison || 'N/A'}\n` +
-        `📅 Date: ${formatDate(form.header.dateReport)}\n` +
-        `⚖️ Poids Net Total: ${calculateTotals().totalPoidsNetUsine.toFixed(0)} kg\n\n` +
-        `📥 Télécharger le PDF: ${fileLink}\n\n` +
-          `Envoyé automatiquement par https://ffyportal.site\n\n✅`
+        `🍋 *RAPPORT RÉCEPTION AVOCAT* 🍋\n\n` +
+        `*Type:* ${activeTab === 'biologique' ? 'BIOLOGIQUE 🌱' : 'CONVENTIONNEL'}\n` +
+        `*Date:* ${formatDate(form.header.dateReport)}\n` +
+        `*Responsable:* ${form.header.responsable || 'Non spécifié'}\n` +
+        `*Bon Livraison:* ${form.header.bonLivraison || 'N/A'}\n` +
+        `*Nombre de Lignes:* ${form.rows.length}\n\n` +
+        `⚖️ *TOTAUX* ⚖️\n` +
+        `• Poids Net Usine: ${totals.totalPoidsNetUsine.toFixed(0)} kg\n` +
+        `• Déchet: ${totals.totalDechet.toFixed(0)} kg\n` +
+        `• Feurte: ${totals.totalFeurte.toFixed(0)} kg\n` +
+        `• Poids Net Ticket: ${totals.totalPoidsNetTicket.toFixed(0)} kg\n` +
+        `• Écart Total: ${totals.totalEcart.toFixed(0)} kg\n\n` +
+        `📄 *RAPPORT COMPLET:*\n${fileLink}\n\n` +
+        `_Généré automatiquement par Fruits For You_`;
 
+      const phoneNumber = "212601902159";
       const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+      
       window.open(whatsappUrl, "_blank");
-
       showNotification('success', 'Rapport envoyé sur WhatsApp avec succès ✅');
 
     } catch (error: any) {
       console.error("Erreur lors de l'envoi du rapport:", error);
       showNotification('error', `Erreur lors de l'envoi: ${error.message}`);
+    } finally {
+      setIsSendingWhatsApp(false);
     }
   };
 
@@ -954,6 +1151,8 @@ function SuiviReception() {
       case 'tablet':
         return 'max-w-6xl mx-auto px-4 py-6';
       case 'small-desktop':
+        return 'max-w-7xl mx-auto px-4 py-6';
+      case 'medium-desktop':
         return 'max-w-7xl mx-auto px-6 py-8';
       case 'large-desktop':
         return 'max-w-[1800px] mx-auto px-8 py-10';
@@ -962,21 +1161,45 @@ function SuiviReception() {
     }
   };
 
-  // Responsive grid classes
-  const getGridCols = (base: number) => {
-    switch (screenSize) {
-      case 'mobile':
-        return 1;
-      case 'tablet':
-        return Math.min(base, 2);
-      case 'small-desktop':
-        return Math.min(base, 3);
-      default:
-        return base;
-    }
-  };
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Options Management Modals */}
+      <OptionsManagementModal
+        isOpen={showVarietyModal}
+        onClose={() => setShowVarietyModal(false)}
+        options={varietyOptions}
+        onOptionsUpdate={handleUpdateVarietyOptions}
+        title="Gérer les Variétés"
+        placeholder="Nouvelle variété..."
+      />
+
+      <OptionsManagementModal
+        isOpen={showMatriculeModal}
+        onClose={() => setShowMatriculeModal(false)}
+        options={matriculeOptions}
+        onOptionsUpdate={handleUpdateMatriculeOptions}
+        title="Gérer les Matricules"
+        placeholder="Nouveau matricule..."
+      />
+
+      <OptionsManagementModal
+        isOpen={showChauffeurModal}
+        onClose={() => setShowChauffeurModal(false)}
+        options={chauffeurOptions}
+        onOptionsUpdate={handleUpdateChauffeurOptions}
+        title="Gérer les Chauffeurs"
+        placeholder="Nouveau chauffeur..."
+      />
+
+      <OptionsManagementModal
+        isOpen={showLieuModal}
+        onClose={() => setShowLieuModal(false)}
+        options={lieuOptions}
+        onOptionsUpdate={handleUpdateLieuOptions}
+        title="Gérer les Lieux"
+        placeholder="Nouveau lieu..."
+      />
+
       {/* Professional Notification Toast */}
       {notification && (
         <div className="fixed top-4 right-4 z-50 animate-fade-in">
@@ -1114,7 +1337,7 @@ function SuiviReception() {
         <div className="bg-white rounded-lg shadow p-6 mb-6 border border-gray-200">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Réception Avocat Hass 2024/2025
+              Réception Avocat Hass 2025/2026
             </h1>
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg">
               <span className="text-sm font-semibold text-gray-700 uppercase">
@@ -1189,7 +1412,7 @@ function SuiviReception() {
           )}
         </div>
 
-        {/* MAIN TABLE SECTION - PROFESSIONAL INDUSTRIAL DESIGN */}
+        {/* MAIN TABLE SECTION */}
         <div className="bg-white rounded-lg shadow overflow-hidden mb-6 border border-gray-200">
           {/* Mobile Cards View */}
           <div className="lg:hidden divide-y divide-gray-200">
@@ -1228,9 +1451,10 @@ function SuiviReception() {
                     <Combobox
                       value={row.matricule}
                       onChange={(value) => updateRow(index, { matricule: value })}
-                      options={MATRICULE_OPTIONS}
+                      options={matriculeOptions}
                       placeholder="Choisir matricule..."
                       className="text-sm"
+                      onManageOptions={() => setShowMatriculeModal(true)}
                     />
                   </div>
 
@@ -1239,9 +1463,10 @@ function SuiviReception() {
                     <Combobox
                       value={row.chauffeur}
                       onChange={(value) => updateRow(index, { chauffeur: value })}
-                      options={CHAUFFEUR_OPTIONS}
+                      options={chauffeurOptions}
                       placeholder="Choisir chauffeur..."
                       className="text-sm"
+                      onManageOptions={() => setShowChauffeurModal(true)}
                     />
                   </div>
 
@@ -1304,9 +1529,10 @@ function SuiviReception() {
                     <Combobox
                       value={row.leLieu}
                       onChange={(value) => updateRow(index, { leLieu: value })}
-                      options={LIEU_OPTIONS}
+                      options={lieuOptions}
                       placeholder="Choisir lieu..."
                       className="text-sm"
+                      onManageOptions={() => setShowLieuModal(true)}
                     />
                   </div>
 
@@ -1315,9 +1541,10 @@ function SuiviReception() {
                     <Combobox
                       value={row.variete}
                       onChange={(value) => updateRow(index, { variete: value })}
-                      options={VARIETY_OPTIONS}
+                      options={varietyOptions}
                       placeholder="Choisir variété..."
                       className="text-sm"
+                      onManageOptions={() => setShowVarietyModal(true)}
                     />
                   </div>
                 </div>
@@ -1325,9 +1552,9 @@ function SuiviReception() {
             ))}
           </div>
 
-          {/* Desktop Table View - PROFESSIONAL INDUSTRIAL */}
+          {/* Desktop Table View */}
           <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full min-w-[1800px]"> {/* Increased for larger inputs */}
+            <table className="w-full min-w-[1800px]">
               <thead className="bg-gray-800 text-white">
                 <tr>
                   <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-16">
@@ -1393,9 +1620,10 @@ function SuiviReception() {
                       <Combobox
                         value={row.matricule}
                         onChange={(value) => updateRow(index, { matricule: value })}
-                        options={MATRICULE_OPTIONS}
+                        options={matriculeOptions}
                         placeholder="Sélectionner matricule..."
                         className="text-base py-3"
+                        onManageOptions={() => setShowMatriculeModal(true)}
                       />
                     </td>
 
@@ -1403,9 +1631,10 @@ function SuiviReception() {
                       <Combobox
                         value={row.chauffeur}
                         onChange={(value) => updateRow(index, { chauffeur: value })}
-                        options={CHAUFFEUR_OPTIONS}
+                        options={chauffeurOptions}
                         placeholder="Sélectionner chauffeur..."
                         className="text-base py-3"
+                        onManageOptions={() => setShowChauffeurModal(true)}
                       />
                     </td>
 
@@ -1476,9 +1705,10 @@ function SuiviReception() {
                       <Combobox
                         value={row.leLieu}
                         onChange={(value) => updateRow(index, { leLieu: value })}
-                        options={LIEU_OPTIONS}
+                        options={lieuOptions}
                         placeholder="Sélectionner lieu..."
                         className="text-base py-3"
+                        onManageOptions={() => setShowLieuModal(true)}
                       />
                     </td>
 
@@ -1486,9 +1716,10 @@ function SuiviReception() {
                       <Combobox
                         value={row.variete}
                         onChange={(value) => updateRow(index, { variete: value })}
-                        options={VARIETY_OPTIONS}
+                        options={varietyOptions}
                         placeholder="Sélectionner variété..."
                         className="text-base py-3"
+                        onManageOptions={() => setShowVarietyModal(true)}
                       />
                     </td>
 
@@ -1565,29 +1796,20 @@ function SuiviReception() {
           </div>
         </div>
 
-        {/* Action Buttons - Professional */}
+        {/* Enhanced Action Buttons */}
         <div className="bg-white rounded-lg shadow p-6 mb-6 border border-gray-200">
-          <div className={`grid grid-cols-1 ${screenSize === 'mobile' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-5'} gap-4`}>
-            <button
-              onClick={() => saveReception('draft')}
-              disabled={isLoading}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white rounded-lg font-semibold transition-colors"
-            >
-              <Save size={18} />
-              {isLoading ? 'Sauvegarde...' : 'Sauvegarder Brouillon'}
-            </button>
-
+          <div className={`grid grid-cols-1 ${screenSize === 'mobile' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-4'} gap-4`}>
             <button
               onClick={() => saveReception('submitted')}
               disabled={isLoading}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white rounded-lg font-semibold transition-colors"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg font-semibold transition-colors"
             >
               <CheckCircle size={18} />
-              {isLoading ? 'Envoi...' : (editingArchiveId ? 'Mettre à Jour' : 'Soumettre Réception')}
+              {isLoading ? 'Enregistrement...' : (editingArchiveId ? 'Mettre à Jour' : 'Enregistrer Réception')}
             </button>
 
             <button
-              onClick={generatePDF}
+              onClick={() => generatePDF()}
               className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
             >
               <Download size={18} />
@@ -1596,10 +1818,11 @@ function SuiviReception() {
 
             <button
               onClick={sendReportToWhatsApp}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition-colors"
+              disabled={isSendingWhatsApp}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 disabled:bg-green-400 text-white rounded-lg font-semibold transition-colors"
             >
               <Share2 size={18} />
-              Envoyer WhatsApp
+              {isSendingWhatsApp ? 'Envoi...' : 'Envoyer WhatsApp'}
             </button>
 
             <button
@@ -1612,7 +1835,7 @@ function SuiviReception() {
           </div>
         </div>
 
-        {/* Archive Section - Professional */}
+        {/* Archive Section */}
         <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
           <div className="border-b border-gray-200 p-6">
             <div className="flex flex-wrap justify-between items-center gap-4">
@@ -1629,7 +1852,7 @@ function SuiviReception() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                   <input
                     type="text"
-                    placeholder="Rechercher..."
+                    placeholder="Rechercher par titre, responsable, bon livraison..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none w-64"
@@ -1639,11 +1862,12 @@ function SuiviReception() {
                 <div className="flex gap-2">
                   <select
                     value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as 'date' | 'responsable')}
+                    onChange={(e) => setSortBy(e.target.value as 'date' | 'responsable' | 'bonLivraison')}
                     className="px-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                   >
                     <option value="date">Trier par Date</option>
                     <option value="responsable">Trier par Responsable</option>
+                    <option value="bonLivraison">Trier par Bon Livraison</option>
                   </select>
 
                   <button
@@ -1679,121 +1903,155 @@ function SuiviReception() {
                 </div>
               ) : (
                 <div className="grid gap-4">
-                  {filteredArchives.map((archived) => (
-                    <div
-                      key={archived.id}
-                      className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-colors p-6"
-                    >
-                      <div className="flex flex-wrap justify-between items-start gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-3 mb-3">
-                            <h4 className="text-lg font-semibold text-gray-900">
-                              {archived.header.title}
-                            </h4>
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${archived.status === 'submitted'
-                                ? 'bg-green-100 text-green-800'
-                                : archived.status === 'draft'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                              {archived.status === 'submitted' ? 'Soumis' :
-                                archived.status === 'draft' ? 'Brouillon' : 'Archivé'}
-                            </span>
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                              {archived.category === 'biologique' ? 'BIO' : 'CONV'}
-                            </span>
-                          </div>
+                  {filteredArchives
+                    .filter(archived => {
+                      if (!searchTerm) return true;
+                      const searchLower = searchTerm.toLowerCase();
+                      return (
+                        archived.header.title?.toLowerCase().includes(searchLower) ||
+                        archived.header.responsable?.toLowerCase().includes(searchLower) ||
+                        archived.header.bonLivraison?.toLowerCase().includes(searchLower) ||
+                        archived.header.bonLivraison === searchTerm ||
+                        archived.header.bonLivraison?.includes(searchTerm) ||
+                        archived.rows.some(row => 
+                          row.produit?.toLowerCase().includes(searchLower) ||
+                          row.lot?.toLowerCase().includes(searchLower)
+                        )
+                      );
+                    })
+                    .sort((a, b) => {
+                      if (sortBy === 'bonLivraison') {
+                        const aNum = extractNumberFromBonLivraison(a.header.bonLivraison);
+                        const bNum = extractNumberFromBonLivraison(b.header.bonLivraison);
+                        return sortOrder === 'asc' ? aNum - bNum : bNum - aNum;
+                      } else if (sortBy === 'date') {
+                        const aDate = new Date(a.header.dateReport);
+                        const bDate = new Date(b.header.dateReport);
+                        return sortOrder === 'asc' ? aDate.getTime() - bDate.getTime() : bDate.getTime() - aDate.getTime();
+                      } else if (sortBy === 'responsable') {
+                        const aResp = a.header.responsable || '';
+                        const bResp = b.header.responsable || '';
+                        return sortOrder === 'asc' ? aResp.localeCompare(bResp) : bResp.localeCompare(aResp);
+                      }
+                      return 0;
+                    })
+                    .map((archived) => (
+                      <div
+                        key={archived.id}
+                        className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-colors p-6"
+                      >
+                        <div className="flex flex-wrap justify-between items-start gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-3 mb-3">
+                              <h4 className="text-lg font-semibold text-gray-900">
+                                {archived.header.title}
+                              </h4>
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${archived.status === 'submitted'
+                                  ? 'bg-green-100 text-green-800'
+                                  : archived.status === 'draft'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                {archived.status === 'submitted' ? 'Soumis' :
+                                  archived.status === 'draft' ? 'Brouillon' : 'Archivé'}
+                              </span>
+                              <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                                {archived.category === 'biologique' ? 'BIO' : 'CONV'}
+                              </span>
+                            </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">Date:</span>
-                              <span>{formatDate(archived.header.dateReport)}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">Responsable:</span>
-                              <span>{archived.header.responsable || 'Non spécifié'}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">Bon Livraison:</span>
-                              <span>{archived.header.bonLivraison || 'N/A'}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">Lignes:</span>
-                              <span>{archived.rows.length}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">Créé le:</span>
-                              <span>{formatFirestoreDate(archived.createdAt)}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">Modifié le:</span>
-                              <span>{formatFirestoreDate(archived.updatedAt)}</span>
-                            </div>
-                          </div>
-
-                          {/* Quick row summary */}
-                          <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200">
-                            <div className="text-xs font-semibold text-gray-600 mb-2">RÉSUMÉ DES LIGNES</div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                              <div>
-                                <span className="font-medium">Poids Net Usine:</span>{' '}
-                                {archived.rows.reduce((sum, r) => sum + (parseFloat(r.poidsNetUsine) || 0), 0).toFixed(0)}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">Date:</span>
+                                <span>{formatDate(archived.header.dateReport)}</span>
                               </div>
-                              <div>
-                                <span className="font-medium">Déchet:</span>{' '}
-                                {archived.rows.reduce((sum, r) => sum + (parseFloat(r.dechet) || 0), 0).toFixed(0)}
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">Responsable:</span>
+                                <span>{archived.header.responsable || 'Non spécifié'}</span>
                               </div>
-                              <div>
-                                <span className="font-medium">Poids Net Ticket:</span>{' '}
-                                {archived.rows.reduce((sum, r) => sum + (parseFloat(r.poidsNetTicket) || 0), 0).toFixed(0)}
-                              </div>
-                              <div>
-                                <span className="font-medium">Écart Total:</span>{' '}
-                                <span className={
-                                  archived.rows.reduce((sum, r) => sum + computeEcartRow(r), 0) >= 0
-                                    ? 'text-green-600 font-semibold'
-                                    : 'text-red-600 font-semibold'
-                                }>
-                                  {archived.rows.reduce((sum, r) => sum + computeEcartRow(r), 0).toFixed(0)}
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">Bon Livraison:</span>
+                                <span className="font-mono bg-gray-100 px-2 py-1 rounded border">
+                                  {archived.header.bonLivraison || 'N/A'}
                                 </span>
                               </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">Lignes:</span>
+                                <span>{archived.rows.length}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">Créé le:</span>
+                                <span>{formatFirestoreDate(archived.createdAt)}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">Modifié le:</span>
+                                <span>{formatFirestoreDate(archived.updatedAt)}</span>
+                              </div>
+                            </div>
+
+                            {/* Quick row summary */}
+                            <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200">
+                              <div className="text-xs font-semibold text-gray-600 mb-2">RÉSUMÉ DES LIGNES</div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div>
+                                  <span className="font-medium">Poids Net Usine:</span>{' '}
+                                  {archived.rows.reduce((sum, r) => sum + (parseFloat(r.poidsNetUsine) || 0), 0).toFixed(0)}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Déchet:</span>{' '}
+                                  {archived.rows.reduce((sum, r) => sum + (parseFloat(r.dechet) || 0), 0).toFixed(0)}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Poids Net Ticket:</span>{' '}
+                                  {archived.rows.reduce((sum, r) => sum + (parseFloat(r.poidsNetTicket) || 0), 0).toFixed(0)}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Écart Total:</span>{' '}
+                                  <span className={
+                                    archived.rows.reduce((sum, r) => sum + computeEcartRow(r), 0) >= 0
+                                      ? 'text-green-600 font-semibold'
+                                      : 'text-red-600 font-semibold'
+                                  }>
+                                    {archived.rows.reduce((sum, r) => sum + computeEcartRow(r), 0).toFixed(0)}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => viewArchive(archived)}
-                            className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors text-sm font-medium"
-                          >
-                            <Eye size={16} />
-                            Consulter
-                          </button>
-                          <button
-                            onClick={() => loadArchive(archived)}
-                            className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors text-sm font-medium"
-                          >
-                            <Edit size={16} />
-                            Modifier
-                          </button>
-                          <button
-                            onClick={() => duplicateArchive(archived)}
-                            className="flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded transition-colors text-sm font-medium"
-                          >
-                            <FilePlus size={16} />
-                            Dupliquer
-                          </button>
-                          <button
-                            onClick={() => archived.id && deleteArchive(archived.id)}
-                            className="flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded transition-colors text-sm font-medium"
-                          >
-                            <Trash2 size={16} />
-                            Supprimer
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => viewArchive(archived)}
+                              className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors text-sm font-medium"
+                            >
+                              <Eye size={16} />
+                              Consulter
+                            </button>
+                            <button
+                              onClick={() => loadArchive(archived)}
+                              className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors text-sm font-medium"
+                            >
+                              <Edit size={16} />
+                              Modifier
+                            </button>
+                            <button
+                              onClick={() => duplicateArchive(archived)}
+                              className="flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded transition-colors text-sm font-medium"
+                            >
+                              <FilePlus size={16} />
+                              Dupliquer
+                            </button>
+                            <button
+                              onClick={() => archived.id && deleteArchive(archived.id)}
+                              className="flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded transition-colors text-sm font-medium"
+                            >
+                              <Trash2 size={16} />
+                              Supprimer
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               )}
             </div>

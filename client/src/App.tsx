@@ -27,7 +27,6 @@ import QualityControl from "./pages/quality/qualitycontrol";
 import personnelmanagement from "./pages/personnele/personnelmanagement";
 import calculedeconsomation from "./pages/production/calculedeconsomation";
 import archifage from "./pages/src/archifage";
-import Horaires from "./pages/personnele/Horaires";
 import WorkHoursHistory from "./pages/personnele/WorkHoursHistory";
 import FicheDePaie from "./pages/personnele/FicheDePaie";
 import historiquedeconsomation from "./pages/production/historiquedeconsomation";
@@ -38,7 +37,6 @@ import Rapportqualité from "@/pages/quality/Rapportqualité";
 import ArchiveRapportqualité from "@/pages/quality/Archivagedescontroles";
 import Archivagedescontroles from "@/pages/quality/Archivagedescontroles";
 import QualityArchive from "@/pages/quality/QualityArchive";
-// import QualityControlTestPage from "@/pages/quality/QualityControlTestPage";
 import FirebaseConnectionTest from "@/components/FirebaseConnectionTest";
 import QualityControlDebug from "@/components/QualityControlDebug";
 import QualityControlSaveTest from "@/components/QualityControlSaveTest";
@@ -72,7 +70,8 @@ import suivifichedechet from "./pages/production/suivifichedechet.tsx"
 import Dechetvendu from "./pages/reception/Dechetvendu.tsx"
 import fullReceptionAvocat from "./pages/reception/fullReceptionAvocat.tsx" 
 import nouvelleSUIVIRECEPTION from "./pages/reception/nouvelleSUIVIRECEPTION.tsx"
-
+import Schedules from "./pages/personnele/schedules";
+import Archife from "./pages/logistique/Archive.tsx"
 // Public routes that don't require authentication
 function PublicRoutes() {
   return (
@@ -88,6 +87,7 @@ function PublicRoutes() {
       <Route path="/archifage" component={Archifage} />
       <Route path="/box/:boxId" component={BoxDetail} />
       <Route path="/qr/lot-landing" component={LotLanding} />
+      
       <Route path="*">
         <ProtectedRoute>
           <AuthenticatedRoutes />
@@ -124,7 +124,6 @@ function AuthenticatedRoutes() {
         <Route path="/traceability" component={StatisticsPage} />
         <Route path="/inventory" component={inventory} />
         <Route path="/qualitycontrol" component={QualityControl} />
-        {/* <Route path="/quality-test" component={QualityControlTestPage} /> */}
         <Route path="/firebase-test" component={FirebaseConnectionTest} />
         <Route path="/firebase-expedition-test" component={FirebaseExpeditionTest} />
         <Route path="/firebase-expedition-simple" component={FirebaseExpeditionTestSimple} />
@@ -158,6 +157,10 @@ function AuthenticatedRoutes() {
         <Route path="/dechet-vendu" component={Dechetvendu} />
         <Route path="/full-Reception-Avocat" component={fullReceptionAvocat} />
         <Route path="/nouvelleSUIVIRECEPTION" component={nouvelleSUIVIRECEPTION} />
+        
+        {/* CORRECTION : Schedules dans AuthenticatedRoutes avec MainLayout */}
+        <Route path="/schedules" component={Schedules} />
+        
         {/* Client Orders */}
         {/* Maintenance Routes */}
         <Route path="/maintenance" component={Dashboard} />
@@ -167,6 +170,7 @@ function AuthenticatedRoutes() {
         <Route path="/orders" component={GererCommandesClient} />
         <Route path="/archifage" component={Archifage} />
         <Route path="/box/:boxId" component={BoxDetail} />
+                <Route path="/archive-logistique" component={Archife} />
         <Route path="*" component={NotFound} />
       </Switch>
     </MainLayout>

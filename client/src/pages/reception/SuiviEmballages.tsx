@@ -308,80 +308,98 @@ const SuiviEmballages: React.FC = () => {
     toast({ title: 'Enregistré', description: 'Données enregistrées dans le lot courant.' });
   };
 
-  const generatePDF = async () => {
-    const form = getCurrentForm();
-    const lot = getCurrentLot();
+const generatePDF = async () => {
+  const form = getCurrentForm();
+  const lot = getCurrentLot();
 
-    const jsPDF = (await import('jspdf')).default;
-    const doc = new jsPDF('p', 'mm', 'a4');
+  const jsPDF = (await import('jspdf')).default;
+  const doc = new jsPDF('p', 'mm', 'a4');
 
   const pageWidth = 210;
   const margin = 8;
   const contentWidth = pageWidth - margin * 2;
 
-    // Colors
-    const colors = {
-      headerGreen: [101, 174, 73] as const,
-      lightGreen: [200, 230, 201] as const,
-      border: [0, 0, 0] as const,
-      text: [0, 0, 0] as const,
-      white: [255, 255, 255] as const,
-    };
+  // Colors
+  const colors = {
+    headerGreen: [101, 174, 73] as const,
+    lightGreen: [200, 230, 201] as const,
+    border: [0, 0, 0] as const,
+    text: [0, 0, 0] as const,
+    white: [255, 255, 255] as const,
+    signature: [100, 100, 100] as const,
+  };
 
-    const drawRect = (x: number, y: number, w: number, h: number, fill?: readonly number[], lineWidth = 0.3) => {
-      doc.setLineWidth(lineWidth);
-      if (fill) {
-        doc.setFillColor(fill[0], fill[1], fill[2]);
-      }
-      doc.setDrawColor(colors.border[0], colors.border[1], colors.border[2]);
-      doc.rect(x, y, w, h, fill ? 'FD' : 'S');
-    };
+  const drawRect = (x: number, y: number, w: number, h: number, fill?: readonly number[], lineWidth = 0.3) => {
+    doc.setLineWidth(lineWidth);
+    if (fill) {
+      doc.setFillColor(fill[0], fill[1], fill[2]);
+    }
+    doc.setDrawColor(colors.border[0], colors.border[1], colors.border[2]);
+    doc.rect(x, y, w, h, fill ? 'FD' : 'S');
+  };
 
-    const drawText = (
-      text: string,
-      x: number,
-      y: number,
-      size: number,
-      bold: boolean = false,
-      color: readonly [number, number, number] = colors.text
-    ) => {
-      doc.setTextColor(color[0], color[1], color[2]);
-      doc.setFont('helvetica', bold ? 'bold' : 'normal');
-      doc.setFontSize(size);
-      doc.text(text, x, y);
-    };
+  const drawText = (
+    text: string,
+    x: number,
+    y: number,
+    size: number,
+    bold: boolean = false,
+    color: readonly [number, number, number] = colors.text,
+    align: 'left' | 'center' | 'right' = 'left'
+  ) => {
+    doc.setTextColor(color[0], color[1], color[2]);
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(size);
+    doc.text(text, x, y, { align });
+  };
 
-    let y = margin;
+  const drawLine = (x1: number, y1: number, x2: number, y2: number, lineWidth = 0.5) => {
+    doc.setLineWidth(lineWidth);
+    doc.setDrawColor(colors.signature[0], colors.signature[1], colors.signature[2]);
+    doc.line(x1, y1, x2, y2);
+  };
 
-    const fmtDate = (iso?: string) => {
-      if (!iso) return '';
-      const [yyyy, mm, dd] = iso.split('-');
-      if (!yyyy || !mm || !dd) return iso;
-      return `${dd}/${mm}/${yyyy}`;
-    };
+  let y = margin;
 
-  // Title section (compact) with logo
-  const titleH = 16;
+  const fmtDate = (iso?: string) => {
+    if (!iso) return '';
+    const [yyyy, mm, dd] = iso.split('-');
+    if (!yyyy || !mm || !dd) return iso;
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  // Enhanced Title section with bigger logo
+  const titleH = 20; // Increased header height for bigger logo
   drawRect(margin, y, contentWidth, titleH, colors.headerGreen);
+  
   try {
     // Load logo image
-  const img = await fetch(iconUrl).then(r => r.blob());
+    const img = await fetch(iconUrl).then(r => r.blob());
     const reader = await new Promise<string>((resolve) => {
       const fr = new FileReader();
       fr.onload = () => resolve(fr.result as string);
       fr.readAsDataURL(img);
     });
-    // Draw logo on the left
-    const logoW = 20; const logoH = 8;
-    doc.addImage(reader, 'PNG', margin + 3, y + 4, logoW, logoH);
-  } catch {}
+    
+    // Bigger logo - half of header height
+    const logoH = titleH * 0.6; // 60% of header height - much bigger
+    const logoW = logoH * 1.5; // Maintain aspect ratio
+    
+    // Position logo prominently on the left
+    doc.addImage(reader, 'PNG', margin + 5, y + (titleH - logoH) / 2, logoW, logoH);
+  } catch (error) {
+    console.warn('Could not load logo for PDF:', error);
+  }
+  
+  // Enhanced header text positioning with bigger logo space
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(11.5);
-  doc.text('SUIVI DE LA TRAÇABILITÉ DES EMBALLAGES', margin + contentWidth / 2, y + 10, { align: 'center' });
+  doc.setFontSize(12); // Slightly bigger font
+  doc.text('SUIVI DE LA TRAÇABILITÉ DES EMBALLAGES', margin + contentWidth / 2, y + 12, { align: 'center' });
+  
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('Fruits For You', margin + contentWidth - 35, y + 6);
+  doc.setFontSize(9);
+  doc.text('Fruits For You', margin + contentWidth - 35, y + 7);
 
   y += titleH + 3;
 
@@ -390,8 +408,7 @@ const SuiviEmballages: React.FC = () => {
   drawRect(margin, y, contentWidth, infoH, colors.white);
   drawText(`${form.header.code}`, margin + 4, y + 6, 9, true);
   drawText(`Version ${form.header.version}`, margin + 4, y + 11, 8);
-  drawText('Page 1 sur 1', margin + contentWidth / 2, y + 11, 8);
-  drawText('SYSTÈME DE MANAGEMENT DE LA QUALITÉ', margin + contentWidth - 85, y + 6, 7.5);
+  drawText('SYSTÈME DE MANAGEMENT DE LA QUALITÉ', margin + contentWidth - 130, y + 6, 7.5);
   drawText(form.header.date, margin + contentWidth - 28, y + 11, 8);
 
   y += infoH + 3;
@@ -406,69 +423,125 @@ const SuiviEmballages: React.FC = () => {
 
   y += respH + 3;
 
-    // Table headers
-    const headers = [
-      'Date de conditionnement',
-      'Produit',
-      "Type d'emballage utilisé",
-      'N° de lot',
-      'Quantité',
-      'Fournisseur',
-    ];
-    const colWidths = [35, 30, 35, 25, 25, 40];
+  // Enhanced Table headers with adjusted column widths
+  const headers = [
+    'Date cond.', // Shorter header for date
+    'Produit',
+    "Type d'emballage utilisé",
+    'N° de lot', // Longer cell for lot numbers
+    'Qté', // Shorter header for quantity
+    'Fournisseur',
+  ];
+  
+  // Adjusted column widths: shorter date, longer lot number, shorter quantity
+  const colWidths = [25, 30, 35, 35, 20, 45];
 
-    const headerH = 14;
-    drawRect(margin, y, contentWidth, headerH, colors.lightGreen);
+  const headerH = 14;
+  drawRect(margin, y, contentWidth, headerH, colors.lightGreen);
 
-    let x = margin;
-    headers.forEach((header, i) => {
-      if (i > 0) {
-        doc.line(x, y, x, y + headerH);
-      }
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(8);
-      doc.text(header, x + colWidths[i] / 2, y + headerH / 2 + 2, { align: 'center' });
-      x += colWidths[i];
-    });
-
-    y += headerH;
-
-    // Table rows (compact height)
-    const rowH = 9;
-    for (let i = 0; i < 20; i++) {
-      const row = form.rows[i];
-      drawRect(margin, y, contentWidth, rowH, colors.white);
-
-      let cx = margin;
-      const values = [
-        fmtDate(row?.dateConditionnement) || '',
-        row?.produit || '',
-        row?.typeEmballage || '',
-        row?.numeroLot || '',
-        row?.quantite || '',
-        row?.fournisseur || '',
-      ];
-
-      values.forEach((value, j) => {
-        if (j > 0) {
-          doc.line(cx, y, cx, y + rowH);
-        }
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(7.5);
-        doc.text(String(value), cx + 2, y + rowH / 2 + 2.2);
-        cx += colWidths[j];
-      });
-      y += rowH;
+  let x = margin;
+  headers.forEach((header, i) => {
+    if (i > 0) {
+      doc.line(x, y, x, y + headerH);
     }
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(8);
+    
+    // Special handling for multi-line headers
+    if (header === "Type d'emballage utilisé") {
+      doc.text("Type d'emballage", x + colWidths[i] / 2, y + headerH / 2 - 1, { align: 'center' });
+      doc.text("utilisé", x + colWidths[i] / 2, y + headerH / 2 + 3, { align: 'center' });
+    } else {
+      doc.text(header, x + colWidths[i] / 2, y + headerH / 2 + 2, { align: 'center' });
+    }
+    
+    x += colWidths[i];
+  });
 
-    const fileName = `Suivi_Emballages_${(lot?.lotNumber || 'Lot').replace(/\s+/g, '_')}_${format(
-      new Date(),
-      'yyyyMMdd_HHmm'
-    )}.pdf`;
-    doc.save(fileName);
-  };
+  y += headerH;
+
+  // Table rows - reduced to 18 to make space for signatures
+  const rowH = 9;
+  const totalRows = 18; // Reduced from 20 to make space for signatures
+  for (let i = 0; i < totalRows; i++) {
+    const row = form.rows[i];
+    drawRect(margin, y, contentWidth, rowH, colors.white);
+
+    let cx = margin;
+    const values = [
+      fmtDate(row?.dateConditionnement) || '',
+      row?.produit || '',
+      row?.typeEmballage || '',
+      row?.numeroLot || '',
+      row?.quantite || '',
+      row?.fournisseur || '',
+    ];
+
+    values.forEach((value, j) => {
+      if (j > 0) {
+        doc.line(cx, y, cx, y + rowH);
+      }
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(7.5);
+      
+      // Adjust text positioning based on column
+      const textX = cx + 2;
+      const textY = y + rowH / 2 + 2.2;
+      
+      // Handle long text in lot number column with wrapping
+      if (j === 3 && value.length > 12) { // Lot number column
+        doc.setFontSize(7);
+        doc.text(value.substring(0, 12), textX, textY - 1.5);
+        if (value.length > 12) {
+          doc.text(value.substring(12, 24), textX, textY + 1.5);
+        }
+      } else {
+        doc.text(String(value), textX, textY);
+      }
+      
+      cx += colWidths[j];
+    });
+    y += rowH;
+  }
+
+  // Add space before signatures
+  y += 8;
+
+  // Signature section
+  const signatureSectionHeight = 25;
+  
+ 
+  // Left signature - Responsable Emballage
+  const leftSignatureX = margin + 40;
+  const rightSignatureX = margin + contentWidth - 40;
+  const signatureY = y + 20;
+  
+  // Signature lines
+  drawLine(leftSignatureX - 25, signatureY, leftSignatureX + 25, signatureY, 0.5);
+  drawLine(rightSignatureX - 25, signatureY, rightSignatureX + 25, signatureY, 0.5);
+  
+  // Signature labels
+  drawText('Responsable Emballage', leftSignatureX, signatureY + 8, 9, true, colors.text, 'center');
+  drawText('Responsable Qualité', rightSignatureX, signatureY + 8, 9, true, colors.text, 'center');
+  
+  // Names below signatures (if available)
+  if (form.header.responsableEmballage) {
+    drawText(form.header.responsableEmballage, leftSignatureX, signatureY + 14, 8, false, colors.text, 'center');
+  }
+  
+  if (form.header.responsableQualite) {
+    drawText(form.header.responsableQualite, rightSignatureX, signatureY + 14, 8, false, colors.text, 'center');
+  }
+  
+  
+  const fileName = `Suivi_Emballages_${(lot?.lotNumber || 'Lot').replace(/\s+/g, '_')}_${format(
+    new Date(),
+    'yyyyMMdd_HHmm'
+  )}.pdf`;
+  doc.save(fileName);
+};
 
   // Auto-select first lot
   useEffect(() => {

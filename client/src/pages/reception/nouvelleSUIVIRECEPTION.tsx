@@ -1,18 +1,73 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Printer, Save, Archive, Plus, Trash2, FileText, Database, Share2 } from 'lucide-react';
+import { Download, Printer, Save, Archive, Plus, Trash2, FileText, Database, Share2, Search, ChevronDown, Eye, Edit, FilePlus, RefreshCw } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 
 // PDF logo: set this to a public path (e.g. '/logo.png') or an absolute URL.
-// Put your logo file in the project's `client/public` folder and use '/logo.png' or place in assets and update path.
 const PDF_LOGO_URL = '../../../assets/logo.png';
 
+interface RowData {
+  id: number;
+  noPalette: string;
+  nrCaisse: string;
+  tarePalette: string;
+  poidsBrut: string;
+  poidsNet: string;
+  variete: string;
+  lotIntern: string;
+  decision: string;
+}
+
+interface FormData {
+  date: string;
+  version: string;
+  chau: string;
+  matricule: string;
+  dateMatricule: string;
+  responsable: string;
+  compagne1: string;
+  compagne2: string;
+  bonLivraison: string;
+  produit: string;
+  bonReception: string;
+  rows: RowData[];
+  firebaseId?: string;
+}
+
+interface Totals {
+  totalPalettes: number;
+  totalCaisses: number;
+  totalTare: string;
+  totalBrut: string;
+  totalPoids: string;
+  poidsUsine: string;
+  poidsTicket: string;
+  poidsUsineBrut: string;
+  poidsBrutTicket: string;
+  ecart: string;
+  ecartBrut: string;
+}
+
+interface ArchiveData extends FormData {
+  firebaseId?: string;
+  type: string;
+  totals: Totals;
+  savedAt: string;
+  timestamp: number;
+}
+
 const SuiviReception = () => {
-  const [activeType, setActiveType] = useState('CONVENTIONNEL');
-  const [archives, setArchives] = useState([]);
+  const [activeType, setActiveType] = useState<'CONVENTIONNEL' | 'BIOLOGIQUE'>('CONVENTIONNEL');
+  const [archives, setArchives] = useState<ArchiveData[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
-  const [formData, setFormData] = useState({
+  const [showArchive, setShowArchive] = useState(false);
+  const [isLoadingArchives, setIsLoadingArchives] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'responsable' | 'bonLivraison'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const [formData, setFormData] = useState<FormData>({
     date: new Date().toISOString().split('T')[0],
     version: '01',
     chau: '',
@@ -31,24 +86,61 @@ const SuiviReception = () => {
     ]
   });
 
-  const [totals, setTotals] = useState({
+  const [totals, setTotals] = useState<Totals>({
     totalPalettes: 0,
     totalCaisses: 0,
-    totalTare: 0,
-    totalBrut: 0,
-    totalPoids: 0,
-    poidsUsine: 0,
-    poidsTicket: 0,
-    poidsUsineBrut: 0,
-    poidsBrutTicket: 0,
-    ecart: 0,
-    ecartBrut: 0
+    totalTare: '0',
+    totalBrut: '0',
+    totalPoids: '0',
+    poidsUsine: '0',
+    poidsTicket: '0',
+    poidsUsineBrut: '0',
+    poidsBrutTicket: '0',
+    ecart: '0',
+    ecartBrut: '0'
   });
 
-  useEffect(() => {
-    calculateTotals();
-    loadFromFirebase();
-  }, [formData.rows, totals.poidsTicket]);
+  // Helper function to extract numbers from Bon Livraison for proper numerical sorting
+  const extractNumberFromBonLivraison = (bonLivraison: string | undefined): number => {
+    if (!bonLivraison) return 0;
+    
+    const numbers = bonLivraison.match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      return parseInt(numbers[0], 10);
+    }
+    
+    return 0;
+  };
+
+  // Helper functions for archive section
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('fr-FR');
+  };
+
+  const formatFirestoreDate = (timestamp: any) => {
+    if (!timestamp) return 'N/A';
+    try {
+      if (typeof timestamp === 'string') {
+        return new Date(timestamp).toLocaleDateString('fr-FR', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      return date.toLocaleDateString('fr-FR', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'Date invalide';
+    }
+  };
 
   const calculateTotals = () => {
     const totalPalettes = formData.rows.length;
@@ -60,7 +152,7 @@ const SuiviReception = () => {
     // Calculate the new brut values
     const poidsUsineBrut = totalPoids + (totalCaisses * 2.79) + totalTare;
     const poidsBrutTicket = (totalCaisses * 2.80) + totalTare + (parseFloat(totals.poidsTicket) || 0);
-    const ecartBrut = (poidsUsineBrut - poidsBrutTicket).toFixed(2);
+    const ecartBrut = (poidsUsineBrut - poidsBrutTicket);
 
     setTotals(prev => {
       const poidsTicket = parseFloat(prev.poidsTicket) || 0;
@@ -76,16 +168,25 @@ const SuiviReception = () => {
         ecart: (poidsUsineVal - poidsTicket).toFixed(2),
         poidsUsineBrut: poidsUsineBrut.toFixed(2),
         poidsBrutTicket: poidsBrutTicket.toFixed(2),
-        ecartBrut
+        ecartBrut: ecartBrut.toFixed(2)
       };
     });
   };
 
-  const handleInputChange = (field, value) => {
+  useEffect(() => {
+    calculateTotals();
+  }, [formData.rows, totals.poidsTicket]);
+
+  // Load archives on component mount
+  useEffect(() => {
+    loadFromFirebase();
+  }, []);
+
+  const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleRowChange = (id, field, value) => {
+  const handleRowChange = (id: number, field: keyof RowData, value: string) => {
     setFormData(prev => {
       const updatedRows = prev.rows.map(row => {
         if (row.id === id) {
@@ -125,7 +226,7 @@ const SuiviReception = () => {
     }));
   };
 
-  const deleteRow = (id) => {
+  const deleteRow = (id: number) => {
     if (formData.rows.length > 1) {
       setFormData(prev => {
         const rows = prev.rows.filter(row => row.id !== id).map((r, i) => ({ ...r, noPalette: String(i + 1) }));
@@ -171,18 +272,25 @@ const SuiviReception = () => {
   };
 
   const loadFromFirebase = async () => {
+    setIsLoadingArchives(true);
     try {
       const colRef = collection(db, 'suiviReception');
       const q = query(colRef, orderBy('timestamp', 'desc'));
       const snaps = await getDocs(q);
-      const archivesList = snaps.docs.map(d => ({ ...(d.data() as any), firebaseId: d.id }));
+      const archivesList = snaps.docs.map(d => ({ 
+        ...(d.data() as ArchiveData), 
+        firebaseId: d.id 
+      }));
       setArchives(archivesList);
     } catch (err) {
       console.error('Erreur chargement Firebase:', err);
+      alert('❌ Erreur chargement: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsLoadingArchives(false);
     }
   };
 
-  const deleteFromFirebase = async (firebaseId) => {
+  const deleteFromFirebase = async (firebaseId: string) => {
     if (!confirm('Supprimer cet enregistrement de Firebase?')) return;
     setLoading(true);
     try {
@@ -202,6 +310,43 @@ const SuiviReception = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Archive functions
+  const viewArchive = (archived: ArchiveData) => {
+    alert(`Consultation de l'archive: ${archived.bonReception}\nResponsable: ${archived.responsable}\nDate: ${archived.dateMatricule}`);
+  };
+
+  const loadArchive = (archived: ArchiveData) => {
+    if (!confirm('Charger cet enregistrement? Les données actuelles seront remplacées.')) return;
+    
+    setFormData({
+      ...archived,
+      firebaseId: archived.firebaseId
+    });
+    setActiveType(archived.type as 'CONVENTIONNEL' | 'BIOLOGIQUE');
+    setTotals(archived.totals);
+    setShowArchive(false);
+    alert('✅ Enregistrement chargé!');
+  };
+
+  const duplicateArchive = (archived: ArchiveData) => {
+    const duplicated = {
+      ...archived,
+      firebaseId: undefined,
+      bonReception: `${archived.bonReception}-COPY`,
+      timestamp: Date.now(),
+      savedAt: new Date().toISOString()
+    };
+    
+    setFormData(duplicated);
+    setTotals(archived.totals);
+    setShowArchive(false);
+    alert('✅ Enregistrement dupliqué! Modifiez le numéro de bon de réception.');
+  };
+
+  const deleteArchive = async (firebaseId: string) => {
+    await deleteFromFirebase(firebaseId);
   };
 
   const generatePDF = () => {
@@ -547,8 +692,8 @@ const SuiviReception = () => {
       </html>
     `;
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+    printWindow!.document.write(htmlContent);
+    printWindow!.document.close();
   };
 
   const exportToExcel = () => {
@@ -581,10 +726,44 @@ const SuiviReception = () => {
     window.print();
   };
 
+  // Filter archives based on search term
+  const filteredArchives = archives.filter(archive => {
+    if (!searchTerm) return true;
+    
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      archive.bonReception?.toLowerCase().includes(searchLower) ||
+      archive.responsable?.toLowerCase().includes(searchLower) ||
+      archive.bonLivraison?.toLowerCase().includes(searchLower) ||
+      archive.bonLivraison?.includes(searchTerm) ||
+      archive.produit?.toLowerCase().includes(searchLower) ||
+      archive.rows.some(row => 
+        row.variete?.toLowerCase().includes(searchLower) ||
+        row.lotIntern?.toLowerCase().includes(searchLower)
+      )
+    );
+  }).sort((a, b) => {
+    // Numerical sorting for Bon Livraison
+    if (sortBy === 'bonLivraison') {
+      const aNum = extractNumberFromBonLivraison(a.bonLivraison);
+      const bNum = extractNumberFromBonLivraison(b.bonLivraison);
+      return sortOrder === 'asc' ? aNum - bNum : bNum - aNum;
+    } else if (sortBy === 'date') {
+      const aDate = new Date(a.dateMatricule);
+      const bDate = new Date(b.dateMatricule);
+      return sortOrder === 'asc' ? aDate.getTime() - bDate.getTime() : bDate.getTime() - aDate.getTime();
+    } else if (sortBy === 'responsable') {
+      const aResp = a.responsable || '';
+      const bResp = b.responsable || '';
+      return sortOrder === 'asc' ? aResp.localeCompare(bResp) : bResp.localeCompare(aResp);
+    }
+    return 0;
+  });
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-        {/* Header */}
+        {/* Header - KEEPING ORIGINAL STRUCTURE */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
           <h1 className="text-3xl font-bold text-center flex items-center justify-center gap-3">
             <Database className="animate-pulse" />
@@ -608,7 +787,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.chau}
                 onChange={(e) => handleInputChange('chau', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
             </div>
             <div>
@@ -617,7 +796,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.matricule}
                 onChange={(e) => handleInputChange('matricule', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
             </div>
             <div>
@@ -626,7 +805,7 @@ const SuiviReception = () => {
                 type="date"
                 value={formData.dateMatricule}
                 onChange={(e) => handleInputChange('dateMatricule', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
             </div>
             <div>
@@ -635,7 +814,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.responsable}
                 onChange={(e) => handleInputChange('responsable', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
             </div>
             <div>
@@ -644,7 +823,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.compagne1}
                 onChange={(e) => handleInputChange('compagne1', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
             </div>
             <div>
@@ -653,7 +832,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.compagne2}
                 onChange={(e) => handleInputChange('compagne2', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
             </div>
           </div>
@@ -669,7 +848,7 @@ const SuiviReception = () => {
                   type="text"
                   value={formData.bonLivraison}
                   onChange={(e) => handleInputChange('bonLivraison', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 />
               </div>
               <div>
@@ -678,7 +857,7 @@ const SuiviReception = () => {
                   type="text"
                   value={formData.produit}
                   onChange={(e) => handleInputChange('produit', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 />
               </div>
             </div>
@@ -690,7 +869,7 @@ const SuiviReception = () => {
                   type="text"
                   value={formData.bonReception}
                   onChange={(e) => handleInputChange('bonReception', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 />
               </div>
               <div>
@@ -698,19 +877,21 @@ const SuiviReception = () => {
                 <div className="flex gap-4">
                   <button
                     onClick={() => setActiveType('CONVENTIONNEL')}
-                    className={`flex-1 px-4 py-2 rounded-md font-semibold transition-all ${activeType === 'CONVENTIONNEL'
+                    className={`flex-1 px-4 py-2 rounded-md font-semibold transition-all ${
+                      activeType === 'CONVENTIONNEL'
                         ? 'bg-blue-600 text-white shadow-lg'
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                    }`}
                   >
                     CONVENTIONNEL
                   </button>
                   <button
                     onClick={() => setActiveType('BIOLOGIQUE')}
-                    className={`flex-1 px-4 py-2 rounded-md font-semibold transition-all ${activeType === 'BIOLOGIQUE'
+                    className={`flex-1 px-4 py-2 rounded-md font-semibold transition-all ${
+                      activeType === 'BIOLOGIQUE'
                         ? 'bg-green-600 text-white shadow-lg'
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                    }`}
                   >
                     BIOLOGIQUE
                   </button>
@@ -842,7 +1023,7 @@ const SuiviReception = () => {
                   <td className="border-2 border-gray-400 p-2 text-sm text-center">{totals.totalTare}</td>
                   <td className="border-2 border-gray-400 p-2 text-sm text-center">{totals.totalBrut}</td>
                   <td className="border-2 border-gray-400 p-2 text-sm text-center bg-blue-300">{totals.totalPoids}</td>
-                  <td className="border-2 border-gray-400 p-2" colSpan="4"></td>
+                  <td className="border-2 border-gray-400 p-2" colSpan={4}></td>
                 </tr>
               </tbody>
             </table>
@@ -874,7 +1055,7 @@ const SuiviReception = () => {
                     const poidsUsine = parseFloat(prev.poidsUsine) || 0;
                     return ({
                       ...prev,
-                      poidsTicket: newTicket,
+                      poidsTicket: newTicket.toString(),
                       ecart: (poidsUsine - newTicket).toFixed(2)
                     });
                   })}
@@ -890,7 +1071,7 @@ const SuiviReception = () => {
                   className="w-full px-4 py-3 border-3 border-orange-500 rounded-md bg-orange-50 font-bold text-orange-700 text-center text-lg"
                 />
               </div>
-              <div className="bg-white p-4 rounded-lg border-2 border-pink-900 shadow">
+              <div className="bg-white p-4 rounded-lg border-2 border-purple-300 shadow">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">POIDS USINE brut (kg)</label>
                 <input
                   type="number"
@@ -976,66 +1157,206 @@ const SuiviReception = () => {
           </div>
         </div>
 
-        {/* Archives Section */}
-        {archives.length > 0 && (
-          <div className="p-6 border-t-2 border-gray-300 bg-gray-50">
-            <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <Archive className="text-purple-600" />
-              Archives Firebase ({archives.length})
-            </h3>
-            <div className="max-h-96 overflow-y-auto space-y-3">
-              {archives.map(archive => (
-                <div key={archive.firebaseId} className="bg-white p-4 rounded-lg border-2 border-blue-200 hover:border-blue-400 transition-all shadow hover:shadow-lg">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${archive.type === 'CONVENTIONNEL'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-green-100 text-green-700'
-                          }`}>
-                          {archive.type}
-                        </span>
-                        <span className="font-bold text-lg">Bon: {archive.bonReception}</span>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-gray-700">
-                        <div><strong>Palettes:</strong> {archive.rows.length}</div>
-                        <div><strong>Caisses:</strong> {archive.totals.totalCaisses}</div>
-                        <div><strong>Poids:</strong> {archive.totals.totalPoids} kg</div>
-                        <div><strong>Écart:</strong> {archive.totals.ecart} kg</div>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-2">
-                        📅 {new Date(archive.savedAt).toLocaleString('fr-FR')}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1 font-mono">
-                        🔑 ID: {archive.firebaseId}
-                      </div>
-                    </div>
-                    <div className="ml-4 flex flex-col gap-2">
-                      <button
-                        onClick={() => {
-                          setFormData(prev => ({ ...prev, ...archive }));
-                          if (archive.totals) setTotals(archive.totals);
-                          if (archive.type) setActiveType(archive.type);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-2"
-                      >
-                        <Save size={16} /> Charger
-                      </button>
-                      <button
-                        onClick={() => deleteFromFirebase(archive.firebaseId)}
-                        disabled={loading}
-                        className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2"
-                      >
-                        <Trash2 size={16} /> Supprimer
-                      </button>
-                    </div>
-                  </div>
+        {/* Archive Section */}
+        <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+          <div className="border-b border-gray-200 p-6">
+            <div className="flex flex-wrap justify-between items-center gap-4">
+              <div className="flex items-center gap-3">
+                <Archive className="text-gray-600" size={24} />
+                <h3 className="text-xl font-semibold text-gray-900">Historique des Réceptions</h3>
+                <span className="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-sm font-medium">
+                  {filteredArchives.length} réception{filteredArchives.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <input
+                    type="text"
+                    placeholder="Rechercher par bon réception, responsable..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none w-64"
+                  />
                 </div>
-              ))}
+
+                <div className="flex gap-2">
+                  {/* Sort Options */}
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as 'date' | 'responsable' | 'bonLivraison')}
+                    className="px-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                  >
+                    <option value="date">Trier par Date</option>
+                    <option value="responsable">Trier par Responsable</option>
+                    <option value="bonLivraison">Trier par Bon Livraison</option>
+                  </select>
+
+                  <button
+                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                    className="px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    {sortOrder === 'asc' ? '↑' : '↓'}
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setShowArchive(!showArchive)}
+                  className="flex items-center gap-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition-colors"
+                >
+                  {showArchive ? 'Masquer' : 'Afficher'} l'historique
+                  <ChevronDown size={18} className={`transform transition ${showArchive ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
             </div>
           </div>
-        )}
+
+          {showArchive && (
+            <div className="p-6 bg-gray-50">
+              {isLoadingArchives ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="animate-spin mx-auto text-gray-600" size={32} />
+                  <p className="text-gray-600 mt-3">Chargement des réceptions...</p>
+                </div>
+              ) : filteredArchives.length === 0 ? (
+                <div className="text-center py-8">
+                  <Archive className="mx-auto text-gray-400" size={48} />
+                  <p className="text-gray-600 mt-3">
+                    {archives.length === 0 
+                      ? "Aucune réception enregistrée dans Firebase. Sauvegardez d'abord une réception." 
+                      : "Aucune réception ne correspond à votre recherche."}
+                  </p>
+                  {archives.length === 0 && (
+                    <button
+                      onClick={saveToFirebase}
+                      className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Sauvegarder une première réception
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {filteredArchives.map((archived) => (
+                    <div
+                      key={archived.firebaseId}
+                      className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-colors p-6"
+                    >
+                      <div className="flex flex-wrap justify-between items-start gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-3 mb-3">
+                            <h4 className="text-lg font-semibold text-gray-900">
+                              Bon Réception: {archived.bonReception}
+                            </h4>
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              archived.type === 'BIOLOGIQUE' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {archived.type}
+                            </span>
+                            <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-xs font-medium">
+                              {formatDate(archived.dateMatricule)}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">Responsable:</span>
+                              <span>{archived.responsable || 'Non spécifié'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">Bon Livraison:</span>
+                              <span className="font-mono bg-gray-100 px-2 py-1 rounded border">
+                                {archived.bonLivraison || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">Produit:</span>
+                              <span>{archived.produit}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">Lignes:</span>
+                              <span>{archived.rows.length}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">Créé le:</span>
+                              <span>{formatFirestoreDate(archived.savedAt)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">Total Poids Net:</span>
+                              <span className="font-semibold">{archived.totals.totalPoids} kg</span>
+                            </div>
+                          </div>
+
+                          {/* Quick row summary */}
+                          <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200">
+                            <div className="text-xs font-semibold text-gray-600 mb-2">RÉSUMÉ DES LIGNES</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="font-medium">Total Caisses:</span>{' '}
+                                {archived.totals.totalCaisses}
+                              </div>
+                              <div>
+                                <span className="font-medium">Total Poids Net:</span>{' '}
+                                {archived.totals.totalPoids} kg
+                              </div>
+                              <div>
+                                <span className="font-medium">Poids Ticket:</span>{' '}
+                                {archived.totals.poidsTicket} kg
+                              </div>
+                              <div>
+                                <span className="font-medium">Écart:</span>{' '}
+                                <span className={
+                                  parseFloat(archived.totals.ecart) >= 0
+                                    ? 'text-green-600 font-semibold'
+                                    : 'text-red-600 font-semibold'
+                                }>
+                                  {archived.totals.ecart} kg
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => viewArchive(archived)}
+                            className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors text-sm font-medium"
+                          >
+                            <Eye size={16} />
+                            Consulter
+                          </button>
+                          <button
+                            onClick={() => loadArchive(archived)}
+                            className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors text-sm font-medium"
+                          >
+                            <Edit size={16} />
+                            Modifier
+                          </button>
+                          <button
+                            onClick={() => duplicateArchive(archived)}
+                            className="flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded transition-colors text-sm font-medium"
+                          >
+                            <FilePlus size={16} />
+                            Dupliquer
+                          </button>
+                          <button
+                            onClick={() => archived.firebaseId && deleteArchive(archived.firebaseId)}
+                            className="flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded transition-colors text-sm font-medium"
+                          >
+                            <Trash2 size={16} />
+                            Supprimer
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
