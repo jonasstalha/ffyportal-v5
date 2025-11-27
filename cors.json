@@ -1,0 +1,32 @@
+[
+  {
+    "origin": ["*"],
+    "method": ["GET"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "x-goog-meta-*"]
+  },
+  {
+    "origin": ["http://localhost:5173", "http://localhost:3000", "http://localhost:5174", "https://fruitsforyou-10acc.web.app", "https://fruitsforyou-10acc.firebaseapp.com"],
+    "method": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": [
+      "Content-Type", 
+      "Authorization", 
+      "Content-Length", 
+      "User-Agent", 
+      "x-goog-resumable",
+      "X-Goog-Upload-Protocol",
+      "X-Goog-Upload-Command", 
+      "X-Goog-Upload-Content-Length",
+      "X-Goog-Upload-Offset",
+      "X-Goog-Upload-Status",
+      "X-Goog-Upload-Header-Content-Length",
+      "X-Goog-Upload-Header-Content-Type",
+      "X-Goog-Upload-URL",
+      "X-Goog-Meta-*",
+      "Access-Control-Allow-Origin",
+      "Access-Control-Allow-Methods",
+      "Access-Control-Allow-Headers"
+    ]
+  }
+]

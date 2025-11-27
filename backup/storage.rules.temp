@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// TEMPORARY PERMISSIVE RULES FOR TESTING
+// REPLACE WITH SECURE RULES FOR PRODUCTION
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to validate image file types
+    function isValidImageType() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+    
+    // Helper function to validate image size (max 10MB)
+    function isValidImageSize() {
+      return request.resource.size <= 10 * 1024 * 1024; // 10MB limit
+    }
+
+    // TEMPORARY: Allow all authenticated users to upload/read images
+    match /quality_control/{allPaths=**} {
+      allow read, write: if isAuthenticated() && 
+                           isValidImageType() && 
+                           isValidImageSize();
+    }
+    
+    // Test uploads for debugging
+    match /test-uploads/{allPaths=**} {
+      allow read, write: if isAuthenticated() && 
+                           isValidImageType() && 
+                           isValidImageSize();
+    }
+    
+    // Deny everything else by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "fruitforyou": "fruitsforyou-10acc",
+    "default": "fruitsforyou-10acc"
+  },
+  "targets": {},
+  "etags": {}
+}
