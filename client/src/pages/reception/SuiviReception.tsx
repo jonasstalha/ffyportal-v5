@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FilePlus, Plus, RefreshCw, Save, Trash2, Archive, Edit, X, Menu, ChevronDown, AlertCircle, CheckCircle, Download, Upload, Search, Eye, Share2, Settings } from 'lucide-react';
+import { FilePlus, Plus, RefreshCw, Save, Trash2, Archive, Edit, X, Menu, ChevronDown, AlertCircle, CheckCircle, Download, Upload, Search, Eye, Share2, Settings, Tag } from 'lucide-react';
 import { db, auth } from '../../lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../lib/firebase";
@@ -12,13 +12,8 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
-  query,
-  where,
-  orderBy
+  setDoc
 } from 'firebase/firestore';
-
-// Import jsPDF correctly
-import jsPDF from 'jspdf';
 
 // Enhanced media queries hook for all screen sizes
 const useMediaQuery = (query: string) => {
@@ -66,13 +61,13 @@ interface ReceptionFormData {
 
 // Default options that will be synced with Firebase
 const DEFAULT_VARIETY_OPTIONS = ['HASS', 'ZUTANO', 'DECHET', 'FUERTY'];
-const DEFAULT_MATRICULE_OPTIONS = ['23071 A 59', '20252 B 26', '33971 A 59', '15427 A 51', '630 A 78', '12577 A 45'];
-const DEFAULT_CHAUFFEUR_OPTIONS = ['MOHAMMED', 'ABDELLAH', 'SOUHAIL', 'IMADD', 'TRACH', 'IMAAD'];
+const DEFAULT_MATRICULE_OPTIONS = ['23071 A 59', '20252 B 26', '33971 A 59', '15427 A 51', '630 A 78', '12577 A 45', '1857 A 18'];
+const DEFAULT_CHAUFFEUR_OPTIONS = ['MOHAMMED', 'ABDELLAH', 'SOUHAIL', 'IMADD', 'TRACH', 'IMAAD', 'zaari'];
 const DEFAULT_LIEU_OPTIONS = [
   'lmnzah', 'ain ariss', 'sid taibi', 'sale', 'bouknadel', 'rabat', 
   'skhirat', 'laarjat', 'tiflet', 'ould agil', 'dar jdida', 'DELLALHA', 
-  'TNIN SID EL YAMANI', 'TNIN AIN FELFEL', 'OUKAD', 'LAANABSA', 'BELIL', 
-  'laawamra', 'MOULAY BOUSLHAM', 'oulad mesbah', 'oulad berjal'
+  'TNIN SID EL YAMANI', 'TNIN AIN FELFEL', 'OUKAD', 'LAANABSA', 'BELIL', 'lakhzazna' ,
+  'laawamra', 'MOULAY BOUSLHAM', 'oulad mesbah', 'oulad berjal' ,'kamouni','laarayech',
 ];
 
 // Firebase collections for options
@@ -226,14 +221,272 @@ const OptionsManagementModal = ({
   );
 };
 
-// Enhanced Combobox Component with options management
-const Combobox = ({
+// Category Change Modal Component
+const ChangeCategoryModal = ({
+  isOpen,
+  onClose,
+  currentCategory,
+  onConfirmChange,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  currentCategory: 'conventionnel' | 'biologique';
+  onConfirmChange: (newCategory: 'conventionnel' | 'biologique') => void;
+}) => {
+  const [selectedCategory, setSelectedCategory] = useState<'conventionnel' | 'biologique'>(currentCategory);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedCategory(currentCategory);
+    }
+  }, [isOpen, currentCategory]);
+
+  const handleConfirm = () => {
+    onConfirmChange(selectedCategory);
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div className="flex justify-between items-center p-6 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Changer le Type de Réception</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={24} />
+          </button>
+        </div>
+        
+        <div className="p-6">
+          <div className="mb-4">
+            <p className="text-gray-700 mb-3">
+              Sélectionnez le nouveau type pour cette réception :
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setSelectedCategory('conventionnel')}
+                className={`p-4 border-2 rounded-lg transition-colors flex flex-col items-center justify-center ${
+                  selectedCategory === 'conventionnel'
+                    ? 'border-gray-800 bg-gray-800 text-white'
+                    : 'border-gray-300 hover:border-gray-400 bg-white text-gray-700'
+                }`}
+              >
+                <span className="font-semibold">CONVENTIONNEL</span>
+                <span className="text-sm mt-1">Type standard</span>
+              </button>
+              
+              <button
+                onClick={() => setSelectedCategory('biologique')}
+                className={`p-4 border-2 rounded-lg transition-colors flex flex-col items-center justify-center ${
+                  selectedCategory === 'biologique'
+                    ? 'border-green-600 bg-green-600 text-white'
+                    : 'border-gray-300 hover:border-green-400 bg-white text-gray-700'
+                }`}
+              >
+                <span className="font-semibold">BIOLOGIQUE</span>
+                <span className="text-sm mt-1">Type bio</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={16} />
+              <div>
+                <strong className="text-amber-900 font-semibold text-sm">Note importante :</strong>
+                <p className="text-amber-800 text-xs mt-0.5">
+                  Le changement de type affectera également les variétés des lignes existantes.
+                  Les variétés seront automatiquement ajustées en fonction du nouveau type.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 font-medium"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={selectedCategory === currentCategory}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-400 font-medium"
+          >
+            Confirmer le changement
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// FIXED: Selection Popup Modal for options
+const SelectionPopupModal = ({
+  isOpen,
+  onClose,
+  options,
+  onSelect,
+  title,
+  placeholder,
+  onManageOptions,
+  value
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  options: string[];
+  onSelect: (value: string) => void;
+  title: string;
+  placeholder?: string;
+  onManageOptions?: () => void;
+  value?: string;
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredOptions, setFilteredOptions] = useState<string[]>(options);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFilteredOptions(options);
+      setSearchTerm('');
+    }
+  }, [options, isOpen]);
+
+  useEffect(() => {
+    if (searchTerm.trim() === '') {
+      setFilteredOptions(options);
+    } else {
+      const filtered = options.filter(option =>
+        option.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredOptions(filtered);
+    }
+  }, [searchTerm, options]);
+
+  const handleSelect = (option: string) => {
+    onSelect(option);
+    onClose();
+  };
+
+  const handleAddNew = () => {
+    if (searchTerm.trim()) {
+      onSelect(searchTerm.trim());
+      onClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-6 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={24} />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-hidden p-6">
+          <div className="flex gap-2 mb-4">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={placeholder || "Rechercher..."}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:border-green-500 focus:ring-1 focus:ring-green-200 outline-none"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && searchTerm.trim()) {
+                  handleAddNew();
+                }
+              }}
+              autoFocus
+            />
+            {onManageOptions && (
+              <button
+                onClick={() => {
+                  onManageOptions();
+                  onClose();
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium flex items-center gap-2"
+                title="Gérer les options"
+              >
+                <Settings size={18} />
+              </button>
+            )}
+          </div>
+          
+          {searchTerm.trim() && !options.includes(searchTerm.trim()) && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="text-blue-700">
+                  Ajouter "{searchTerm}" comme nouvelle option
+                </span>
+                <button
+                  onClick={handleAddNew}
+                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                >
+                  Ajouter
+                </button>
+              </div>
+            </div>
+          )}
+          
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-60 overflow-y-auto">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleSelect(option)}
+                  className={`p-3 border-b border-gray-100 last:border-b-0 hover:bg-green-50 hover:text-green-700 cursor-pointer transition-colors ${
+                    value === option ? 'bg-green-50 text-green-700 font-semibold' : ''
+                  }`}
+                >
+                  {option}
+                </div>
+              ))
+            ) : (
+              <div className="p-4 text-center text-gray-500">
+                Aucune option trouvée
+                {searchTerm.trim() && (
+                  <div className="mt-2">
+                    <button
+                      onClick={handleAddNew}
+                      className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                    >
+                      Ajouter "{searchTerm}"
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 font-medium"
+          >
+            Annuler
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// FIXED: Enhanced Combobox with Selection Popup
+const EnhancedCombobox = ({
   value,
   onChange,
   options,
-  placeholder = "Taper ou sélectionner...",
+  placeholder = "Cliquer pour sélectionner...",
   className = "",
-  onManageOptions
+  onManageOptions,
+  modalTitle = "Sélectionner une option"
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -241,10 +494,93 @@ const Combobox = ({
   placeholder?: string;
   className?: string;
   onManageOptions?: () => void;
+  modalTitle?: string;
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [showPopup, setShowPopup] = useState(false);
+
+  const handleInputClick = () => {
+    setShowPopup(true);
+  };
+
+  const handleSelectFromPopup = (selectedValue: string) => {
+    onChange(selectedValue);
+    setShowPopup(false);
+  };
+
+  return (
+    <>
+      <div className={`relative ${className}`}>
+        <div className="relative">
+          <input
+            type="text"
+            value={value}
+            readOnly
+            onClick={handleInputClick}
+            placeholder={placeholder}
+            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 transition outline-none pr-20 cursor-pointer bg-white"
+          />
+          <div className="absolute inset-y-0 right-0 flex items-center">
+            {onManageOptions && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onManageOptions();
+                }}
+                className="p-1 text-gray-400 hover:text-gray-600 mr-1"
+                title="Gérer les options"
+              >
+                <Settings size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleInputClick}
+              className="h-full px-2 text-gray-400 hover:text-gray-600 border-l border-gray-200"
+            >
+              <ChevronDown size={16} className={`transition-transform ${showPopup ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <SelectionPopupModal
+        isOpen={showPopup}
+        onClose={() => setShowPopup(false)}
+        options={options}
+        onSelect={handleSelectFromPopup}
+        title={modalTitle}
+        placeholder="Rechercher une option..."
+        onManageOptions={onManageOptions}
+        value={value}
+      />
+    </>
+  );
+};
+
+// FIXED: Simple Input with optional popup
+const SimpleCombobox = ({
+  value,
+  onChange,
+  options,
+  placeholder = "Taper ou sélectionner...",
+  className = "",
+  onManageOptions,
+  modalTitle = "Sélectionner une option",
+  showPopup = true
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder?: string;
+  className?: string;
+  onManageOptions?: () => void;
+  modalTitle?: string;
+  showPopup?: boolean;
+}) => {
+  const [showPopupModal, setShowPopupModal] = useState(false);
   const [inputValue, setInputValue] = useState(value);
-  const [filteredOptions, setFilteredOptions] = useState(options);
 
   useEffect(() => {
     setInputValue(value);
@@ -253,94 +589,79 @@ const Combobox = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInputValue(newValue);
+    onChange(newValue);
+  };
 
-    const filtered = options.filter(option =>
-      option.toLowerCase().includes(newValue.toLowerCase())
-    );
-    setFilteredOptions(filtered);
-
-    if (!isOpen) {
-      setIsOpen(true);
-    }
-
-    if (options.includes(newValue)) {
-      onChange(newValue);
+  const handleInputClick = () => {
+    if (showPopup) {
+      setShowPopupModal(true);
     }
   };
 
-  const handleSelect = (option: string) => {
-    setInputValue(option);
-    onChange(option);
-    setIsOpen(false);
-    setFilteredOptions(options);
+  const handleSelectFromPopup = (selectedValue: string) => {
+    setInputValue(selectedValue);
+    onChange(selectedValue);
+    setShowPopupModal(false);
   };
 
   const handleBlur = () => {
-    setTimeout(() => {
-      setIsOpen(false);
-      if (!options.includes(inputValue) && value) {
-        setInputValue(value);
-      }
-    }, 200);
-  };
-
-  const handleFocus = () => {
-    setFilteredOptions(options);
-    setIsOpen(true);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && filteredOptions.length > 0 && !options.includes(inputValue)) {
-      handleSelect(filteredOptions[0]);
-    }
+    onChange(inputValue);
   };
 
   return (
-    <div className={`relative ${className}`}>
-      <input
-        type="text"
-        value={inputValue}
-        onChange={handleInputChange}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 transition outline-none pr-20"
-      />
-      <div className="absolute inset-y-0 right-0 flex items-center">
-        {onManageOptions && (
-          <button
-            type="button"
-            onClick={onManageOptions}
-            className="p-1 text-gray-400 hover:text-gray-600 mr-1"
-            title="Gérer les options"
-          >
-            <Settings size={14} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="h-full px-2 text-gray-400 hover:text-gray-600 border-l border-gray-200"
-        >
-          <ChevronDown size={16} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
+    <>
+      <div className={`relative ${className}`}>
+        <div className="relative">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={handleInputChange}
+            onClick={handleInputClick}
+            onBlur={handleBlur}
+            placeholder={placeholder}
+            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 transition outline-none pr-20 cursor-pointer"
+          />
+          <div className="absolute inset-y-0 right-0 flex items-center">
+            {onManageOptions && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onManageOptions();
+                }}
+                className="p-1 text-gray-400 hover:text-gray-600 mr-1"
+                title="Gérer les options"
+              >
+                <Settings size={14} />
+              </button>
+            )}
+            {showPopup && (
+              <button
+                type="button"
+                onClick={handleInputClick}
+                className="h-full px-2 text-gray-400 hover:text-gray-600 border-l border-gray-200"
+              >
+                <ChevronDown size={16} className={`transition-transform ${showPopupModal ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {isOpen && filteredOptions.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-          {filteredOptions.map((option, index) => (
-            <div
-              key={index}
-              onClick={() => handleSelect(option)}
-              className="px-3 py-2 cursor-pointer hover:bg-green-50 hover:text-green-700 transition border-b border-gray-100 last:border-b-0"
-            >
-              {option}
-            </div>
-          ))}
-        </div>
+      {showPopup && (
+        <SelectionPopupModal
+          isOpen={showPopupModal}
+          onClose={() => setShowPopupModal(false)}
+          options={options}
+          onSelect={handleSelectFromPopup}
+          title={modalTitle}
+          placeholder="Rechercher une option..."
+          onManageOptions={onManageOptions}
+          value={value}
+        />
       )}
-    </div>
+    </>
   );
 };
 
@@ -354,7 +675,7 @@ function SuiviReception() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'date' | 'responsable'>('date');
+  const [sortBy, setSortBy] = useState<'date' | 'responsable' | 'bonLivraison'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoadingArchives, setIsLoadingArchives] = useState(false);
   const [allReceptionsData, setAllReceptionsData] = useState<ReceptionFormData[]>([]);
@@ -372,7 +693,11 @@ function SuiviReception() {
   const [showChauffeurModal, setShowChauffeurModal] = useState(false);
   const [showLieuModal, setShowLieuModal] = useState(false);
 
-  // Enhanced media queries for all screen sizes including small PCs
+  // Category change modal
+  const [showChangeCategoryModal, setShowChangeCategoryModal] = useState(false);
+  const [selectedArchiveForCategoryChange, setSelectedArchiveForCategoryChange] = useState<ReceptionFormData | null>(null);
+
+  // Enhanced media queries for all screen sizes
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isTablet = useMediaQuery('(min-width: 769px) and (max-width: 1024px)');
   const isSmallDesktop = useMediaQuery('(min-width: 1025px) and (max-width: 1280px)');
@@ -490,10 +815,14 @@ function SuiviReception() {
           return sortOrder === 'asc'
             ? a.header.dateReport.localeCompare(b.header.dateReport)
             : b.header.dateReport.localeCompare(a.header.dateReport);
-        } else {
+        } else if (sortBy === 'responsable') {
           return sortOrder === 'asc'
             ? (a.header.responsable || '').localeCompare(b.header.responsable || '')
             : (b.header.responsable || '').localeCompare(a.header.responsable || '');
+        } else {
+          return sortOrder === 'asc'
+            ? (a.header.bonLivraison || '').localeCompare(b.header.bonLivraison || '')
+            : (b.header.bonLivraison || '').localeCompare(a.header.bonLivraison || '');
         }
       });
 
@@ -634,7 +963,7 @@ function SuiviReception() {
     }
   };
 
-  // Enhanced CRUD operations - Single save function
+  // FIXED: Enhanced CRUD operations with proper saving
   const saveReception = async (status: 'draft' | 'submitted' = 'submitted') => {
     if (status === 'submitted' && !form.rows.some(r => r.poidsNetUsine)) {
       showNotification('error', 'Veuillez remplir au moins une ligne avant de soumettre');
@@ -653,30 +982,20 @@ function SuiviReception() {
 
       let savedDocId = editingArchiveId;
 
-if (editingArchiveId) {
-  // SAFE UPDATE or CREATE if missing
-  const docRef = doc(db, "receptions", editingArchiveId);
-
-  await setDoc(docRef, dataToSave, { merge: true });
-
-  showNotification(
-    'success',
-    `Réception ${status === 'draft' ? 'brouillon' : ''} mise à jour`
-  );
-
-  savedDocId = editingArchiveId;
-
-} else {
-  // CREATE new document
-  const newDoc = await addDoc(collection(db, "receptions"), dataToSave);
-  savedDocId = newDoc.id;
-
-  showNotification(
-    'success',
-    `Réception ${status === 'draft' ? 'brouillon' : ''} enregistrée`
-  );
-}
-
+      if (editingArchiveId) {
+        // Update existing document
+        const docRef = doc(db, "receptions", editingArchiveId);
+        await setDoc(docRef, dataToSave, { merge: true });
+        
+        showNotification('success', `Réception ${status === 'draft' ? 'brouillon' : ''} mise à jour`);
+        savedDocId = editingArchiveId;
+      } else {
+        // Create new document
+        const newDoc = await addDoc(collection(db, "receptions"), dataToSave);
+        savedDocId = newDoc.id;
+        
+        showNotification('success', `Réception ${status === 'draft' ? 'brouillon' : ''} enregistrée`);
+      }
 
       // Refresh all data
       await fetchAllReceptions();
@@ -818,6 +1137,58 @@ if (editingArchiveId) {
     }
   };
 
+  // Function to change category of an archived reception
+  const handleChangeCategory = (archived: ReceptionFormData) => {
+    setSelectedArchiveForCategoryChange(archived);
+    setShowChangeCategoryModal(true);
+  };
+
+  // Confirm category change
+  const confirmCategoryChange = async (newCategory: 'conventionnel' | 'biologique') => {
+    if (!selectedArchiveForCategoryChange?.id) return;
+
+    try {
+      setIsLoading(true);
+      
+      // Update the variety in rows based on new category
+      const updatedRows = selectedArchiveForCategoryChange.rows.map(row => ({
+        ...row,
+        variete: newCategory === 'biologique' ? 
+          (row.variete.includes('CONV') ? row.variete.replace('CONV', 'BIO') : row.variete) :
+          (row.variete.includes('BIO') ? row.variete.replace('BIO', 'CONV') : row.variete)
+      }));
+
+      const updatedData = {
+        ...selectedArchiveForCategoryChange,
+        category: newCategory,
+        rows: updatedRows,
+        updatedAt: serverTimestamp(),
+      };
+
+      // Update in Firebase
+      const docRef = doc(db, "receptions", selectedArchiveForCategoryChange.id);
+      await setDoc(docRef, updatedData, { merge: true });
+
+      // Refresh data
+      await fetchAllReceptions();
+      
+      // If the edited archive is currently loaded, update it
+      if (editingArchiveId === selectedArchiveForCategoryChange.id) {
+        setForm(updatedData);
+      }
+
+      showNotification('success', `Type changé de ${selectedArchiveForCategoryChange.category} à ${newCategory}`);
+      
+    } catch (error: any) {
+      console.error('Error changing category:', error);
+      showNotification('error', `Erreur lors du changement de type: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+      setSelectedArchiveForCategoryChange(null);
+      setShowChangeCategoryModal(false);
+    }
+  };
+
   // Filter archives based on search term
   const filteredArchives = archivedForms.filter(archived =>
     archived.header.responsable?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -847,57 +1218,26 @@ if (editingArchiveId) {
 
   const stats = getStatistics();
 
-  // SIMPLE PDF GENERATION WITHOUT AUTOTABLE
+  // FIXED: PDF Generation with proper options display
   const generatePDF = async (forWhatsApp: boolean = false): Promise<Blob | null> => {
     try {
-      if (forWhatsApp) {
-        showNotification('success', 'Préparation du PDF pour WhatsApp...');
-      } else {
-        showNotification('success', 'Génération du PDF en cours...');
-      }
-
-      // Load jsPDF from CDN
-      if (!window.jspdf) {
-        const script1 = document.createElement('script');
-        script1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        document.head.appendChild(script1);
-        await new Promise((resolve, reject) => {
-          script1.onload = resolve;
-          script1.onerror = reject;
-          setTimeout(reject, 10000);
-        });
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      // Load autoTable plugin
-      if (!window.jspdf?.jsPDF?.API?.autoTable) {
-        const script2 = document.createElement('script');
-        script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js';
-        document.head.appendChild(script2);
-        await new Promise((resolve, reject) => {
-          script2.onload = resolve;
-          script2.onerror = reject;
-          setTimeout(reject, 10000);
-        });
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      const jsPDF = window.jspdf.jsPDF;
-      if (!jsPDF) {
-        throw new Error('jsPDF non chargé correctement');
-      }
-
+      showNotification('success', forWhatsApp ? 'Préparation du PDF pour WhatsApp...' : 'Génération du PDF en cours...');
+      
+      // Dynamically import jsPDF and autoTable
+      const { jsPDF } = await import('jspdf');
+      await import('jspdf-autotable');
+      
       const doc = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 15;
       let yPos = margin;
 
-      // ENHANCED Header with better contrast
+      // Header
       doc.setFillColor(34, 84, 61);
       doc.rect(0, 0, pageWidth, 40, 'F');
 
-      // ENHANCED Title with better spacing
+      // Title
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(255, 255, 255);
@@ -911,7 +1251,7 @@ if (editingArchiveId) {
 
       yPos = 45;
 
-      // ENHANCED Information Table
+      // Information Table
       doc.setFillColor(248, 250, 252);
       doc.rect(margin, yPos, pageWidth - 2 * margin, 25, 'F');
       doc.setDrawColor(100, 100, 100);
@@ -953,7 +1293,7 @@ if (editingArchiveId) {
 
       yPos += 30;
 
-      // ENHANCED Table data preparation
+      // Main table data - FIXED: Show actual values from form
       const totals = calculateTotals();
       const tableData = form.rows.map(r => [
         formatDate(r.date),
@@ -969,7 +1309,7 @@ if (editingArchiveId) {
         r.variete || '-'
       ]);
 
-      // ENHANCED Totals row
+      // Add totals row
       tableData.push([
         'TOTAL GÉNÉRAL',
         '',
@@ -984,7 +1324,7 @@ if (editingArchiveId) {
         ''
       ]);
 
-      // ENHANCED Main table with better styling
+      // Add table using autoTable
       (doc as any).autoTable({
         startY: yPos,
         head: [
@@ -1046,7 +1386,7 @@ if (editingArchiveId) {
         margin: { left: margin, right: margin }
       });
 
-      // ENHANCED Footer
+      // Footer
       const finalY = pageHeight - 20;
       doc.setFillColor(34, 84, 61);
       doc.rect(0, finalY, pageWidth, 20, 'F');
@@ -1097,14 +1437,10 @@ if (editingArchiveId) {
 
     setIsSendingWhatsApp(true);
     try {
-      showNotification('info', 'Préparation du PDF...');
-
       const pdfBlob = await generatePDF(true);
       if (!pdfBlob) {
         throw new Error("Échec de la génération du PDF");
       }
-
-      showNotification('info', 'Téléversement du PDF...');
 
       const storage = getStorage();
       const fileName = `reports/Rapport_${Date.now()}.pdf`;
@@ -1147,22 +1483,33 @@ if (editingArchiveId) {
   const getContainerClass = () => {
     switch (screenSize) {
       case 'mobile':
-        return 'max-w-full mx-auto px-3 py-4';
+        return 'max-w-full mx-auto px-2 py-2 overflow-x-hidden';
       case 'tablet':
-        return 'max-w-6xl mx-auto px-4 py-6';
+        return 'max-w-full mx-auto px-4 py-4 overflow-x-hidden';
       case 'small-desktop':
-        return 'max-w-7xl mx-auto px-4 py-6';
+        return 'max-w-full mx-auto px-4 py-4';
       case 'medium-desktop':
-        return 'max-w-7xl mx-auto px-6 py-8';
+        return 'max-w-full mx-auto px-6 py-6';
       case 'large-desktop':
-        return 'max-w-[1800px] mx-auto px-8 py-10';
+        return 'max-w-[1800px] mx-auto px-8 py-8';
       default:
-        return 'max-w-[1800px] mx-auto px-6 py-8';
+        return 'max-w-full mx-auto px-4 py-4';
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Category Change Modal */}
+      <ChangeCategoryModal
+        isOpen={showChangeCategoryModal}
+        onClose={() => {
+          setShowChangeCategoryModal(false);
+          setSelectedArchiveForCategoryChange(null);
+        }}
+        currentCategory={selectedArchiveForCategoryChange?.category || 'conventionnel'}
+        onConfirmChange={confirmCategoryChange}
+      />
+
       {/* Options Management Modals */}
       <OptionsManagementModal
         isOpen={showVarietyModal}
@@ -1277,13 +1624,13 @@ if (editingArchiveId) {
 
       <div className={getContainerClass()}>
         {/* Mobile Header */}
-        <div className="lg:hidden mb-6 bg-white rounded-lg shadow border border-gray-200 p-4 flex justify-between items-center">
+        <div className="lg:hidden mb-4 bg-white rounded-lg shadow border border-gray-200 p-3 flex justify-between items-center">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Réception Avocat</h2>
-            <span className="inline-block mt-1 text-sm bg-gray-800 text-white px-3 py-1 rounded font-semibold capitalize">
+            <h2 className="text-lg font-bold text-gray-900">Réception Avocat</h2>
+            <span className="inline-block mt-1 text-xs bg-gray-800 text-white px-2 py-1 rounded font-semibold capitalize">
               {activeTab}
             </span>
-            <div className="text-xs text-gray-600 mt-2 flex items-center gap-3">
+            <div className="text-xs text-gray-600 mt-1 flex items-center gap-2">
               <span className="font-medium">{stats.totalReceptions} réceptions</span>
               <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
               <span className="font-medium">{stats.totalRows} lignes</span>
@@ -1291,25 +1638,25 @@ if (editingArchiveId) {
           </div>
           <button
             onClick={() => setShowMobileMenu(true)}
-            className="p-3 bg-gray-800 text-white rounded-lg"
+            className="p-2 bg-gray-800 text-white rounded-lg"
           >
-            <Menu size={20} />
+            <Menu size={18} />
           </button>
         </div>
 
         {/* Desktop Tab Navigation */}
-        <div className="hidden lg:block bg-white rounded-lg shadow border border-gray-200 mb-6">
+        <div className="hidden lg:block bg-white rounded-lg shadow border border-gray-200 mb-4">
           <div className="flex">
             <button
               onClick={() => switchTab('conventionnel')}
-              className={`flex-1 py-4 px-8 font-semibold border-r border-gray-200 transition-colors ${activeTab === 'conventionnel'
+              className={`flex-1 py-3 px-6 font-semibold border-r border-gray-200 transition-colors ${activeTab === 'conventionnel'
                   ? 'bg-gray-800 text-white'
                   : 'bg-white text-gray-700 hover:bg-gray-50'
                 }`}
             >
-              <div className="flex items-center justify-center gap-3">
+              <div className="flex items-center justify-center gap-2">
                 <span>CONVENTIONNEL</span>
-                <span className={`px-3 py-1 rounded text-sm ${activeTab === 'conventionnel' ? 'bg-gray-600' : 'bg-gray-200'
+                <span className={`px-2 py-0.5 rounded text-xs ${activeTab === 'conventionnel' ? 'bg-gray-600' : 'bg-gray-200'
                   }`}>
                   {stats.conventionnelCount}
                 </span>
@@ -1317,14 +1664,14 @@ if (editingArchiveId) {
             </button>
             <button
               onClick={() => switchTab('biologique')}
-              className={`flex-1 py-4 px-8 font-semibold transition-colors ${activeTab === 'biologique'
+              className={`flex-1 py-3 px-6 font-semibold transition-colors ${activeTab === 'biologique'
                   ? 'bg-gray-800 text-white'
                   : 'bg-white text-gray-700 hover:bg-gray-50'
                 }`}
             >
-              <div className="flex items-center justify-center gap-3">
+              <div className="flex items-center justify-center gap-2">
                 <span>BIOLOGIQUE</span>
-                <span className={`px-3 py-1 rounded text-sm ${activeTab === 'biologique' ? 'bg-gray-600' : 'bg-gray-200'
+                <span className={`px-2 py-0.5 rounded text-xs ${activeTab === 'biologique' ? 'bg-gray-600' : 'bg-gray-200'
                   }`}>
                   {stats.biologiqueCount}
                 </span>
@@ -1334,76 +1681,76 @@ if (editingArchiveId) {
         </div>
 
         {/* Header Section */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6 border border-gray-200">
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <div className="bg-white rounded-lg shadow p-4 mb-4 border border-gray-200">
+          <div className="text-center mb-4">
+            <h1 className="text-lg md:text-xl font-bold text-gray-900 mb-2">
               Réception Avocat Hass 2025/2026
             </h1>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg">
-              <span className="text-sm font-semibold text-gray-700 uppercase">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 border border-gray-300 rounded-lg">
+              <span className="text-xs md:text-sm font-semibold text-gray-700 uppercase">
                 {activeTab === 'conventionnel' ? 'Conventionnel' : 'Biologique'}
               </span>
               {editingArchiveId && (
-                <span className="text-xs bg-amber-500 text-white px-2 py-1 rounded">
+                <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded">
                   MODIFICATION
                 </span>
               )}
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-4 text-sm max-w-2xl mx-auto">
-              <div className="text-center p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-3 grid grid-cols-3 gap-3 text-xs max-w-2xl mx-auto">
+              <div className="text-center p-2 bg-gray-50 rounded border border-gray-200">
                 <div className="font-bold text-gray-900">{stats.totalReceptions}</div>
-                <div className="text-gray-600">Total Réceptions</div>
+                <div className="text-gray-600 text-xs">Total Réceptions</div>
               </div>
-              <div className="text-center p-3 bg-gray-50 rounded border border-gray-200">
+              <div className="text-center p-2 bg-gray-50 rounded border border-gray-200">
                 <div className="font-bold text-gray-900">{stats.totalRows}</div>
-                <div className="text-gray-600">Total Lignes</div>
+                <div className="text-gray-600 text-xs">Total Lignes</div>
               </div>
-              <div className="text-center p-3 bg-gray-50 rounded border border-gray-200">
+              <div className="text-center p-2 bg-gray-50 rounded border border-gray-200">
                 <div className="font-bold text-gray-900">{archivedForms.length}</div>
-                <div className="text-gray-600">{activeTab} Actifs</div>
+                <div className="text-gray-600 text-xs">{activeTab} Actifs</div>
               </div>
             </div>
           </div>
 
-          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4`}>
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Date Rapport</label>
+          <div className={`grid grid-cols-1 ${isMobile ? '' : 'sm:grid-cols-2 lg:grid-cols-3'} gap-3`}>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-700">Date Rapport</label>
               <input
                 type="date"
                 value={form.header.dateReport}
                 onChange={(e) => updateForm({ header: { ...form.header, dateReport: e.target.value } })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
               />
             </div>
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Responsable</label>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-700">Responsable</label>
               <input
                 type="text"
                 value={form.header.responsable}
                 onChange={(e) => updateForm({ header: { ...form.header, responsable: e.target.value } })}
                 placeholder="Nom du responsable"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
               />
             </div>
-            <div className="space-y-2 sm:col-span-2 lg:col-span-1">
-              <label className="block text-sm font-semibold text-gray-700">Bon Livraison</label>
+            <div className="space-y-1 sm:col-span-2 lg:col-span-1">
+              <label className="block text-xs font-semibold text-gray-700">Bon Livraison</label>
               <input
                 type="text"
                 value={form.header.bonLivraison}
                 onChange={(e) => updateForm({ header: { ...form.header, bonLivraison: e.target.value } })}
                 placeholder="Numéro de bon"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
               />
             </div>
           </div>
 
           {editingArchiveId && (
-            <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={16} />
                 <div>
-                  <strong className="text-amber-900 font-semibold">Mode édition</strong>
-                  <p className="text-amber-800 text-sm mt-1">
+                  <strong className="text-amber-900 font-semibold text-sm">Mode édition</strong>
+                  <p className="text-amber-800 text-xs mt-0.5">
                     Vous modifiez une réception existante. Les modifications seront sauvegardées lorsque vous cliquerez sur "Mettre à jour".
                   </p>
                 </div>
@@ -1413,60 +1760,62 @@ if (editingArchiveId) {
         </div>
 
         {/* MAIN TABLE SECTION */}
-        <div className="bg-white rounded-lg shadow overflow-hidden mb-6 border border-gray-200">
+        <div className="bg-white rounded-lg shadow overflow-hidden mb-4 border border-gray-200">
           {/* Mobile Cards View */}
           <div className="lg:hidden divide-y divide-gray-200">
             {form.rows.map((row, index) => (
-              <div key={index} className="p-4 hover:bg-gray-50">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-sm font-semibold text-gray-600">Ligne {index + 1}</span>
-                  <div className="flex gap-2">
-                    <span className={`text-base font-semibold ${computeEcartRow(row) >= 0 ? 'text-green-600' : 'text-red-600'
+              <div key={index} className="p-3 hover:bg-gray-50">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-semibold text-gray-600">Ligne {index + 1}</span>
+                  <div className="flex gap-2 items-center">
+                    <span className={`text-sm font-semibold ${computeEcartRow(row) >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
                       Écart: {computeEcartRow(row).toFixed(0)}
                     </span>
                     {form.rows.length > 1 && (
                       <button
                         onClick={() => removeSpecificRow(index)}
-                        className="text-red-500 hover:text-red-700 p-1"
+                        className="text-red-500 hover:text-red-700 p-0.5"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={14} />
                       </button>
                     )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
+                <div className="grid grid-cols-1 gap-2">
+                  <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">Date</label>
                     <input
                       type="date"
                       value={row.date}
                       onChange={(e) => updateRow(index, { date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none text-sm"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">Matricule</label>
-                    <Combobox
+                    <SimpleCombobox
                       value={row.matricule}
                       onChange={(value) => updateRow(index, { matricule: value })}
                       options={matriculeOptions}
-                      placeholder="Choisir matricule..."
-                      className="text-sm"
+                      placeholder="Taper ou cliquer pour sélectionner..."
+                      className="text-xs"
                       onManageOptions={() => setShowMatriculeModal(true)}
+                      modalTitle="Sélectionner un Matricule"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">Chauffeur</label>
-                    <Combobox
+                    <SimpleCombobox
                       value={row.chauffeur}
                       onChange={(value) => updateRow(index, { chauffeur: value })}
                       options={chauffeurOptions}
-                      placeholder="Choisir chauffeur..."
-                      className="text-sm"
+                      placeholder="Taper ou cliquer pour sélectionner..."
+                      className="text-xs"
                       onManageOptions={() => setShowChauffeurModal(true)}
+                      modalTitle="Sélectionner un Chauffeur"
                     />
                   </div>
 
@@ -1476,75 +1825,79 @@ if (editingArchiveId) {
                       type="text"
                       value={row.nlotInterne || ''}
                       onChange={(e) => updateRow(index, { nlotInterne: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none text-sm"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Poids Net Usine</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.poidsNetUsine}
-                      onChange={(e) => updateRow(index, { poidsNetUsine: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none text-sm"
-                    />
-                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Poids Net Usine</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.poidsNetUsine}
+                        onChange={(e) => updateRow(index, { poidsNetUsine: e.target.value })}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Déchet</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.dechet}
-                      onChange={(e) => updateRow(index, { dechet: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none text-sm"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Déchet</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.dechet}
+                        onChange={(e) => updateRow(index, { dechet: e.target.value })}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Feurte</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.feurte}
-                      onChange={(e) => updateRow(index, { feurte: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none text-sm"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Feurte</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.feurte}
+                        onChange={(e) => updateRow(index, { feurte: e.target.value })}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Poids Net Ticket</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.poidsNetTicket}
-                      onChange={(e) => updateRow(index, { poidsNetTicket: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none text-sm"
-                    />
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Poids Net Ticket</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.poidsNetTicket}
+                        onChange={(e) => updateRow(index, { poidsNetTicket: e.target.value })}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                      />
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">Lieu</label>
-                    <Combobox
+                    <SimpleCombobox
                       value={row.leLieu}
                       onChange={(value) => updateRow(index, { leLieu: value })}
                       options={lieuOptions}
-                      placeholder="Choisir lieu..."
-                      className="text-sm"
+                      placeholder="Taper ou cliquer pour sélectionner..."
+                      className="text-xs"
                       onManageOptions={() => setShowLieuModal(true)}
+                      modalTitle="Sélectionner un Lieu"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">Variété</label>
-                    <Combobox
+                    <SimpleCombobox
                       value={row.variete}
                       onChange={(value) => updateRow(index, { variete: value })}
                       options={varietyOptions}
-                      placeholder="Choisir variété..."
-                      className="text-sm"
+                      placeholder="Taper ou cliquer pour sélectionner..."
+                      className="text-xs"
                       onManageOptions={() => setShowVarietyModal(true)}
+                      modalTitle="Sélectionner une Variété"
                     />
                   </div>
                 </div>
@@ -1554,46 +1907,46 @@ if (editingArchiveId) {
 
           {/* Desktop Table View */}
           <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full min-w-[1800px]">
+            <table className="w-full min-w-[1200px]">
               <thead className="bg-gray-800 text-white">
                 <tr>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-16">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-12">
                     #
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-40">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-32">
                     Date
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-40">
                     Matricule
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-40">
                     Chauffeur
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
-                    N° Lot Interne
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-40">
+                    N° Lot
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-40">
                     Poids Net Usine
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-32">
                     Déchet
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-32">
                     Feurte
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-40">
                     Poids Net Ticket
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-40">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-32">
                     Écart
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-40">
                     Lieu
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider border-r border-gray-600 w-60">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider border-r border-gray-600 w-40">
                     Variété
                   </th>
-                  <th className="px-6 py-4 text-left font-semibold text-sm uppercase tracking-wider w-20">
+                  <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider w-16">
                     Actions
                   </th>
                 </tr>
@@ -1601,99 +1954,101 @@ if (editingArchiveId) {
               <tbody className="divide-y divide-gray-200">
                 {form.rows.map((row, index) => (
                   <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 border-r border-gray-200">
+                    <td className="px-4 py-3 border-r border-gray-200">
                       <div className="text-sm font-semibold text-gray-900 text-center">
                         {index + 1}
                       </div>
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
+                    <td className="px-4 py-3 border-r border-gray-200">
                       <input
                         type="date"
                         value={row.date}
                         onChange={(e) => updateRow(index, { date: e.target.value })}
-                        className="w-full px-4 py-3 text-base border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
-                      <Combobox
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <SimpleCombobox
                         value={row.matricule}
                         onChange={(value) => updateRow(index, { matricule: value })}
                         options={matriculeOptions}
-                        placeholder="Sélectionner matricule..."
-                        className="text-base py-3"
+                        placeholder="Taper ou cliquer pour sélectionner..."
+                        className="text-sm py-2"
                         onManageOptions={() => setShowMatriculeModal(true)}
+                        modalTitle="Sélectionner un Matricule"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
-                      <Combobox
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <SimpleCombobox
                         value={row.chauffeur}
                         onChange={(value) => updateRow(index, { chauffeur: value })}
                         options={chauffeurOptions}
-                        placeholder="Sélectionner chauffeur..."
-                        className="text-base py-3"
+                        placeholder="Taper ou cliquer pour sélectionner..."
+                        className="text-sm py-2"
                         onManageOptions={() => setShowChauffeurModal(true)}
+                        modalTitle="Sélectionner un Chauffeur"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
+                    <td className="px-4 py-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={row.nlotInterne || ''}
                         onChange={(e) => updateRow(index, { nlotInterne: e.target.value })}
-                        className="w-full px-4 py-3 text-base border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                         placeholder="N° lot..."
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
+                    <td className="px-4 py-3 border-r border-gray-200">
                       <input
                         type="number"
                         step="0.01"
                         value={row.poidsNetUsine}
                         onChange={(e) => updateRow(index, { poidsNetUsine: e.target.value })}
-                        className="w-full px-4 py-3 text-base border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                         placeholder="0.00"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
+                    <td className="px-4 py-3 border-r border-gray-200">
                       <input
                         type="number"
                         step="0.01"
                         value={row.dechet}
                         onChange={(e) => updateRow(index, { dechet: e.target.value })}
-                        className="w-full px-4 py-3 text-base border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                         placeholder="0.00"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
+                    <td className="px-4 py-3 border-r border-gray-200">
                       <input
                         type="number"
                         step="0.01"
                         value={row.feurte}
                         onChange={(e) => updateRow(index, { feurte: e.target.value })}
-                        className="w-full px-4 py-3 text-base border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                         placeholder="0.00"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
+                    <td className="px-4 py-3 border-r border-gray-200">
                       <input
                         type="number"
                         step="0.01"
                         value={row.poidsNetTicket}
                         onChange={(e) => updateRow(index, { poidsNetTicket: e.target.value })}
-                        className="w-full px-4 py-3 text-base border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                         placeholder="0.00"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
-                      <div className={`px-4 py-3 rounded text-center font-semibold text-lg ${computeEcartRow(row) >= 0
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <div className={`px-3 py-2 rounded text-center font-semibold text-sm ${computeEcartRow(row) >= 0
                           ? 'bg-green-100 text-green-800 border border-green-200'
                           : 'bg-red-100 text-red-800 border border-red-200'
                         }`}>
@@ -1701,36 +2056,38 @@ if (editingArchiveId) {
                       </div>
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
-                      <Combobox
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <SimpleCombobox
                         value={row.leLieu}
                         onChange={(value) => updateRow(index, { leLieu: value })}
                         options={lieuOptions}
-                        placeholder="Sélectionner lieu..."
-                        className="text-base py-3"
+                        placeholder="Taper ou cliquer pour sélectionner..."
+                        className="text-sm py-2"
                         onManageOptions={() => setShowLieuModal(true)}
+                        modalTitle="Sélectionner un Lieu"
                       />
                     </td>
 
-                    <td className="px-6 py-4 border-r border-gray-200">
-                      <Combobox
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <SimpleCombobox
                         value={row.variete}
                         onChange={(value) => updateRow(index, { variete: value })}
                         options={varietyOptions}
-                        placeholder="Sélectionner variété..."
-                        className="text-base py-3"
+                        placeholder="Taper ou cliquer pour sélectionner..."
+                        className="text-sm py-2"
                         onManageOptions={() => setShowVarietyModal(true)}
+                        modalTitle="Sélectionner une Variété"
                       />
                     </td>
 
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3">
                       {form.rows.length > 1 && (
                         <button
                           onClick={() => removeSpecificRow(index)}
-                          className="text-red-500 hover:text-red-700 p-2 transition-colors"
+                          className="text-red-500 hover:text-red-700 p-1 transition-colors"
                           title="Supprimer cette ligne"
                         >
-                          <Trash2 size={20} />
+                          <Trash2 size={16} />
                         </button>
                       )}
                     </td>
@@ -1741,22 +2098,22 @@ if (editingArchiveId) {
               {/* Footer Totals */}
               <tfoot className="bg-gray-100 border-t border-gray-300">
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 font-semibold text-right text-gray-900 border-r border-gray-200">
+                  <td colSpan={5} className="px-4 py-3 font-semibold text-right text-gray-900 border-r border-gray-200">
                     TOTAL GÉNÉRAL
                   </td>
-                  <td className="px-6 py-4 font-semibold text-gray-900 text-center border-r border-gray-200">
+                  <td className="px-4 py-3 font-semibold text-gray-900 text-center border-r border-gray-200">
                     {calculateTotals().totalPoidsNetUsine.toFixed(0)}
                   </td>
-                  <td className="px-6 py-4 font-semibold text-gray-900 text-center border-r border-gray-200">
+                  <td className="px-4 py-3 font-semibold text-gray-900 text-center border-r border-gray-200">
                     {calculateTotals().totalDechet.toFixed(0)}
                   </td>
-                  <td className="px-6 py-4 font-semibold text-gray-900 text-center border-r border-gray-200">
+                  <td className="px-4 py-3 font-semibold text-gray-900 text-center border-r border-gray-200">
                     {calculateTotals().totalFeurte.toFixed(0)}
                   </td>
-                  <td className="px-6 py-4 font-semibold text-gray-900 text-center border-r border-gray-200">
+                  <td className="px-4 py-3 font-semibold text-gray-900 text-center border-r border-gray-200">
                     {calculateTotals().totalPoidsNetTicket.toFixed(0)}
                   </td>
-                  <td className="px-6 py-4 font-semibold text-lg text-center border-r border-gray-200">
+                  <td className="px-4 py-3 font-semibold text-sm text-center border-r border-gray-200">
                     <span className={calculateTotals().totalEcart >= 0 ? 'text-green-700' : 'text-red-700'}>
                       {calculateTotals().totalEcart.toFixed(0)}
                     </span>
@@ -1768,25 +2125,25 @@ if (editingArchiveId) {
           </div>
 
           {/* Table Actions */}
-          <div className="border-t border-gray-200 p-4 bg-gray-50">
-            <div className="flex flex-wrap gap-3 justify-between items-center">
-              <div className="flex flex-wrap gap-3">
+          <div className="border-t border-gray-200 p-3 bg-gray-50">
+            <div className="flex flex-wrap gap-2 justify-between items-center">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={addRow}
-                  className="flex items-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-lg font-semibold transition-colors"
+                  className="flex items-center gap-1 px-3 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg font-semibold transition-colors text-sm"
                 >
-                  <Plus size={18} />
+                  <Plus size={14} />
                   Ajouter Ligne
                 </button>
                 <button
                   onClick={removeLastRow}
-                  className="flex items-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                  className="flex items-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors text-sm"
                 >
-                  <Trash2 size={18} />
+                  <Trash2 size={14} />
                   Supprimer Dernière Ligne
                 </button>
               </div>
-              <div className="text-sm text-gray-600 font-medium">
+              <div className="text-xs text-gray-600 font-medium">
                 {form.rows.length} ligne{form.rows.length > 1 ? 's' : ''} •
                 Total Écart: <span className={calculateTotals().totalEcart >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
                   {calculateTotals().totalEcart.toFixed(0)}
@@ -1797,39 +2154,39 @@ if (editingArchiveId) {
         </div>
 
         {/* Enhanced Action Buttons */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6 border border-gray-200">
-          <div className={`grid grid-cols-1 ${screenSize === 'mobile' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-4'} gap-4`}>
+        <div className="bg-white rounded-lg shadow p-4 mb-4 border border-gray-200">
+          <div className={`grid grid-cols-1 ${screenSize === 'mobile' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-4'} gap-3`}>
             <button
               onClick={() => saveReception('submitted')}
               disabled={isLoading}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg font-semibold transition-colors"
+              className="flex items-center justify-center gap-2 px-3 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg font-semibold transition-colors text-sm"
             >
-              <CheckCircle size={18} />
+              <CheckCircle size={16} />
               {isLoading ? 'Enregistrement...' : (editingArchiveId ? 'Mettre à Jour' : 'Enregistrer Réception')}
             </button>
 
             <button
               onClick={() => generatePDF()}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+              className="flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors text-sm"
             >
-              <Download size={18} />
+              <Download size={16} />
               Générer PDF
             </button>
 
             <button
               onClick={sendReportToWhatsApp}
               disabled={isSendingWhatsApp}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 disabled:bg-green-400 text-white rounded-lg font-semibold transition-colors"
+              className="flex items-center justify-center gap-2 px-3 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-400 text-white rounded-lg font-semibold transition-colors text-sm"
             >
-              <Share2 size={18} />
+              <Share2 size={16} />
               {isSendingWhatsApp ? 'Envoi...' : 'Envoyer WhatsApp'}
             </button>
 
             <button
               onClick={resetForm}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition-colors"
+              className="flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition-colors text-sm"
             >
-              <RefreshCw size={18} />
+              <RefreshCw size={16} />
               Nouveau
             </button>
           </div>
@@ -1837,42 +2194,42 @@ if (editingArchiveId) {
 
         {/* Archive Section */}
         <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
-          <div className="border-b border-gray-200 p-6">
-            <div className="flex flex-wrap justify-between items-center gap-4">
-              <div className="flex items-center gap-3">
-                <Archive className="text-gray-600" size={24} />
-                <h3 className="text-xl font-semibold text-gray-900">Historique des Réceptions</h3>
-                <span className="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-sm font-medium">
+          <div className="border-b border-gray-200 p-4">
+            <div className="flex flex-wrap justify-between items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Archive className="text-gray-600" size={20} />
+                <h3 className="text-lg font-semibold text-gray-900">Historique des Réceptions</h3>
+                <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full text-xs font-medium">
                   {filteredArchives.length} réception{filteredArchives.length !== 1 ? 's' : ''}
                 </span>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                   <input
                     type="text"
-                    placeholder="Rechercher par titre, responsable, bon livraison..."
+                    placeholder="Rechercher..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none w-64"
+                    className="pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none w-48"
                   />
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as 'date' | 'responsable' | 'bonLivraison')}
-                    className="px-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
                   >
-                    <option value="date">Trier par Date</option>
-                    <option value="responsable">Trier par Responsable</option>
-                    <option value="bonLivraison">Trier par Bon Livraison</option>
+                    <option value="date">Date</option>
+                    <option value="responsable">Responsable</option>
+                    <option value="bonLivraison">Bon Livraison</option>
                   </select>
 
                   <button
                     onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    className="px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     {sortOrder === 'asc' ? '↑' : '↓'}
                   </button>
@@ -1880,45 +2237,30 @@ if (editingArchiveId) {
 
                 <button
                   onClick={() => setShowArchive(!showArchive)}
-                  className="flex items-center gap-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition-colors"
+                  className="flex items-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition-colors text-sm"
                 >
-                  {showArchive ? 'Masquer' : 'Afficher'} l'historique
-                  <ChevronDown size={18} className={`transform transition ${showArchive ? 'rotate-180' : ''}`} />
+                  {showArchive ? 'Masquer' : 'Afficher'}
+                  <ChevronDown size={14} className={`transform transition ${showArchive ? 'rotate-180' : ''}`} />
                 </button>
               </div>
             </div>
           </div>
 
           {showArchive && (
-            <div className="p-6 bg-gray-50">
+            <div className="p-4 bg-gray-50">
               {isLoadingArchives ? (
-                <div className="text-center py-8">
-                  <RefreshCw className="animate-spin mx-auto text-gray-600" size={32} />
-                  <p className="text-gray-600 mt-3">Chargement des réceptions...</p>
+                <div className="text-center py-6">
+                  <RefreshCw className="animate-spin mx-auto text-gray-600" size={24} />
+                  <p className="text-gray-600 mt-2 text-sm">Chargement des réceptions...</p>
                 </div>
               ) : filteredArchives.length === 0 ? (
-                <div className="text-center py-8">
-                  <Archive className="mx-auto text-gray-400" size={48} />
-                  <p className="text-gray-600 mt-3">Aucune réception trouvée</p>
+                <div className="text-center py-6">
+                  <Archive className="mx-auto text-gray-400" size={32} />
+                  <p className="text-gray-600 mt-2 text-sm">Aucune réception trouvée</p>
                 </div>
               ) : (
-                <div className="grid gap-4">
+                <div className="grid gap-3">
                   {filteredArchives
-                    .filter(archived => {
-                      if (!searchTerm) return true;
-                      const searchLower = searchTerm.toLowerCase();
-                      return (
-                        archived.header.title?.toLowerCase().includes(searchLower) ||
-                        archived.header.responsable?.toLowerCase().includes(searchLower) ||
-                        archived.header.bonLivraison?.toLowerCase().includes(searchLower) ||
-                        archived.header.bonLivraison === searchTerm ||
-                        archived.header.bonLivraison?.includes(searchTerm) ||
-                        archived.rows.some(row => 
-                          row.produit?.toLowerCase().includes(searchLower) ||
-                          row.lot?.toLowerCase().includes(searchLower)
-                        )
-                      );
-                    })
                     .sort((a, b) => {
                       if (sortBy === 'bonLivraison') {
                         const aNum = extractNumberFromBonLivraison(a.header.bonLivraison);
@@ -1938,15 +2280,15 @@ if (editingArchiveId) {
                     .map((archived) => (
                       <div
                         key={archived.id}
-                        className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-colors p-6"
+                        className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-colors p-4"
                       >
-                        <div className="flex flex-wrap justify-between items-start gap-4">
+                        <div className="flex flex-wrap justify-between items-start gap-3">
                           <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-center gap-3 mb-3">
-                              <h4 className="text-lg font-semibold text-gray-900">
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <h4 className="text-base font-semibold text-gray-900">
                                 {archived.header.title}
                               </h4>
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${archived.status === 'submitted'
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${archived.status === 'submitted'
                                   ? 'bg-green-100 text-green-800'
                                   : archived.status === 'draft'
                                     ? 'bg-amber-100 text-amber-800'
@@ -1955,44 +2297,47 @@ if (editingArchiveId) {
                                 {archived.status === 'submitted' ? 'Soumis' :
                                   archived.status === 'draft' ? 'Brouillon' : 'Archivé'}
                               </span>
-                              <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${archived.category === 'biologique'
+                                  ? 'bg-green-100 text-green-800 border border-green-200'
+                                  : 'bg-gray-100 text-gray-800 border border-gray-200'
+                                }`}>
                                 {archived.category === 'biologique' ? 'BIO' : 'CONV'}
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-                              <div className="flex items-center gap-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs text-gray-600">
+                              <div className="flex items-center gap-1">
                                 <span className="font-semibold">Date:</span>
                                 <span>{formatDate(archived.header.dateReport)}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 <span className="font-semibold">Responsable:</span>
                                 <span>{archived.header.responsable || 'Non spécifié'}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 <span className="font-semibold">Bon Livraison:</span>
-                                <span className="font-mono bg-gray-100 px-2 py-1 rounded border">
+                                <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded border text-xs">
                                   {archived.header.bonLivraison || 'N/A'}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 <span className="font-semibold">Lignes:</span>
                                 <span>{archived.rows.length}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 <span className="font-semibold">Créé le:</span>
                                 <span>{formatFirestoreDate(archived.createdAt)}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 <span className="font-semibold">Modifié le:</span>
                                 <span>{formatFirestoreDate(archived.updatedAt)}</span>
                               </div>
                             </div>
 
                             {/* Quick row summary */}
-                            <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200">
-                              <div className="text-xs font-semibold text-gray-600 mb-2">RÉSUMÉ DES LIGNES</div>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                              <div className="text-xs font-semibold text-gray-600 mb-1">RÉSUMÉ DES LIGNES</div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                                 <div>
                                   <span className="font-medium">Poids Net Usine:</span>{' '}
                                   {archived.rows.reduce((sum, r) => sum + (parseFloat(r.poidsNetUsine) || 0), 0).toFixed(0)}
@@ -2019,33 +2364,41 @@ if (editingArchiveId) {
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1">
                             <button
                               onClick={() => viewArchive(archived)}
-                              className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors text-sm font-medium"
+                              className="flex items-center gap-1 px-2 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors text-xs font-medium"
                             >
-                              <Eye size={16} />
+                              <Eye size={12} />
                               Consulter
                             </button>
                             <button
                               onClick={() => loadArchive(archived)}
-                              className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors text-sm font-medium"
+                              className="flex items-center gap-1 px-2 py-1.5 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors text-xs font-medium"
                             >
-                              <Edit size={16} />
+                              <Edit size={12} />
                               Modifier
                             </button>
                             <button
-                              onClick={() => duplicateArchive(archived)}
-                              className="flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded transition-colors text-sm font-medium"
+                              onClick={() => handleChangeCategory(archived)}
+                              className="flex items-center gap-1 px-2 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded transition-colors text-xs font-medium"
+                              title="Changer le type (CONV/BIO)"
                             >
-                              <FilePlus size={16} />
+                              <Tag size={12} />
+                              Type
+                            </button>
+                            <button
+                              onClick={() => duplicateArchive(archived)}
+                              className="flex items-center gap-1 px-2 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded transition-colors text-xs font-medium"
+                            >
+                              <FilePlus size={12} />
                               Dupliquer
                             </button>
                             <button
                               onClick={() => archived.id && deleteArchive(archived.id)}
-                              className="flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded transition-colors text-sm font-medium"
+                              className="flex items-center gap-1 px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded transition-colors text-xs font-medium"
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={12} />
                               Supprimer
                             </button>
                           </div>

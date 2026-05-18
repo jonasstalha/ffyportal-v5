@@ -761,33 +761,33 @@ const SuiviReception = () => {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-        {/* Header - KEEPING ORIGINAL STRUCTURE */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
-          <h1 className="text-3xl font-bold text-center flex items-center justify-center gap-3">
-            <Database className="animate-pulse" />
+    <div className="min-h-screen bg-gray-100 p-4 md:p-6">
+      <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden border border-gray-300">
+        {/* Header */}
+        <div className="bg-[#1f2a38] text-white p-4 md:p-6">
+          <h1 className="text-xl md:text-3xl font-bold text-center flex items-center justify-center gap-2 md:gap-3">
+            <Database className="animate-pulse" size={24} />
             SUIVI RECEPTION SMQ, ENR24
           </h1>
-          <div className="flex justify-between mt-4 text-sm">
-            <span>Date: {formData.date}</span>
-            <span>Version: {formData.version}</span>
-            <span className={`px-3 py-1 rounded ${loading ? 'bg-yellow-500' : 'bg-green-500'}`}>
+          <div className="flex flex-wrap justify-between items-center mt-3 md:mt-4 text-sm gap-2">
+            <span className="bg-[#2a384a] px-3 py-1 rounded">Date: {formData.date}</span>
+            <span className="bg-[#2a384a] px-3 py-1 rounded">Version: {formData.version}</span>
+            <span className={`px-3 py-1 rounded ${loading ? 'bg-yellow-600' : 'bg-green-600'}`}>
               {loading ? '⏳ Traitement...' : '✅ Prêt'}
             </span>
           </div>
         </div>
 
         {/* Info Section */}
-        <div className="p-6 bg-gray-50 border-b">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-4 md:p-6 bg-gray-50 border-b border-gray-300">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">CHAU</label>
               <input
                 type="text"
                 value={formData.chau}
                 onChange={(e) => handleInputChange('chau', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
               />
             </div>
             <div>
@@ -796,7 +796,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.matricule}
                 onChange={(e) => handleInputChange('matricule', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
               />
             </div>
             <div>
@@ -805,7 +805,7 @@ const SuiviReception = () => {
                 type="date"
                 value={formData.dateMatricule}
                 onChange={(e) => handleInputChange('dateMatricule', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
               />
             </div>
             <div>
@@ -814,7 +814,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.responsable}
                 onChange={(e) => handleInputChange('responsable', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
               />
             </div>
             <div>
@@ -823,7 +823,7 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.compagne1}
                 onChange={(e) => handleInputChange('compagne1', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
               />
             </div>
             <div>
@@ -832,23 +832,23 @@ const SuiviReception = () => {
                 type="text"
                 value={formData.compagne2}
                 onChange={(e) => handleInputChange('compagne2', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
               />
             </div>
           </div>
         </div>
 
         {/* Product Info & Type Selection */}
-        <div className="p-6 border-b">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
+        <div className="p-4 md:p-6 border-b border-gray-300 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+            <div className="space-y-3 md:space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">N° BON DE LIVRAISON</label>
                 <input
                   type="text"
                   value={formData.bonLivraison}
                   onChange={(e) => handleInputChange('bonLivraison', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
                 />
               </div>
               <div>
@@ -857,40 +857,40 @@ const SuiviReception = () => {
                   type="text"
                   value={formData.produit}
                   onChange={(e) => handleInputChange('produit', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
                 />
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3 md:space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">N° BON DE RECEPTION</label>
                 <input
                   type="text"
                   value={formData.bonReception}
                   onChange={(e) => handleInputChange('bonReception', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="w-full px-3 py-2 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">TYPE</label>
-                <div className="flex gap-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">TYPE</label>
+                <div className="flex gap-3 md:gap-4">
                   <button
                     onClick={() => setActiveType('CONVENTIONNEL')}
-                    className={`flex-1 px-4 py-2 rounded-md font-semibold transition-all ${
+                    className={`flex-1 px-3 md:px-4 py-2 rounded font-semibold transition-all border-2 ${
                       activeType === 'CONVENTIONNEL'
-                        ? 'bg-blue-600 text-white shadow-lg'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        ? 'bg-[#1f2a38] text-white border-[#1f2a38]'
+                        : 'bg-white text-gray-700 border-gray-400 hover:border-[#1f2a38]'
                     }`}
                   >
                     CONVENTIONNEL
                   </button>
                   <button
                     onClick={() => setActiveType('BIOLOGIQUE')}
-                    className={`flex-1 px-4 py-2 rounded-md font-semibold transition-all ${
+                    className={`flex-1 px-3 md:px-4 py-2 rounded font-semibold transition-all border-2 ${
                       activeType === 'BIOLOGIQUE'
-                        ? 'bg-green-600 text-white shadow-lg'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        ? 'bg-[#1f2a38] text-white border-[#1f2a38]'
+                        : 'bg-white text-gray-700 border-gray-400 hover:border-[#1f2a38]'
                     }`}
                   >
                     BIOLOGIQUE
@@ -902,12 +902,12 @@ const SuiviReception = () => {
         </div>
 
         {/* Table */}
-        <div className="p-6 overflow-x-auto">
-          <div className="mb-4 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-800">Tableau de Réception - {activeType}</h2>
+        <div className="p-4 md:p-6 overflow-x-auto">
+          <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <h2 className="text-lg md:text-xl font-bold text-gray-800">Tableau de Réception - {activeType}</h2>
             <button
               onClick={addRow}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+              className="flex items-center gap-2 px-3 md:px-4 py-2 bg-[#1f2a38] text-white rounded hover:bg-[#2a384a] transition-colors font-semibold"
             >
               <Plus size={16} /> Ajouter Ligne
             </button>
@@ -916,21 +916,21 @@ const SuiviReception = () => {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse border-2 border-gray-400">
               <thead>
-                <tr className="bg-gradient-to-r from-green-500 to-green-600 text-white">
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">N° PALETTE</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">NR CAISSE</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">TARE<br />PALETTE</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">POIDS BRUT<br />(kg)</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">POIDS NET<br />(kg)</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">VARIETE</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">N° DE LOT<br />INTERN</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">DECISION</th>
-                  <th className="border-2 border-gray-400 p-2 text-xs whitespace-nowrap">ACTION</th>
+                <tr className="bg-[#1f2a38] text-white">
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">N° PALETTE</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">NR CAISSE</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">TARE<br />PALETTE</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">POIDS BRUT<br />(kg)</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">POIDS NET<br />(kg)</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">VARIETE</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">N° DE LOT<br />INTERN</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">DECISION</th>
+                  <th className="border-2 border-gray-600 p-2 text-xs whitespace-nowrap">ACTION</th>
                 </tr>
               </thead>
               <tbody>
                 {formData.rows.map((row, index) => (
-                  <tr key={row.id} className="hover:bg-blue-50 transition-colors">
+                  <tr key={row.id} className="hover:bg-gray-50 transition-colors">
                     <td className="border-2 border-gray-400 p-1">
                       <input
                         type="text"
@@ -945,7 +945,7 @@ const SuiviReception = () => {
                         type="number"
                         value={row.nrCaisse}
                         onChange={(e) => handleRowChange(row.id, 'nrCaisse', e.target.value)}
-                        className="w-full px-2 py-1 text-sm text-center border-0 focus:ring-2 focus:ring-blue-400 rounded"
+                        className="w-full px-2 py-1 text-sm text-center border border-gray-300 focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 rounded outline-none"
                       />
                     </td>
                     <td className="border-2 border-gray-400 p-1">
@@ -954,7 +954,7 @@ const SuiviReception = () => {
                         step="0.01"
                         value={row.tarePalette}
                         onChange={(e) => handleRowChange(row.id, 'tarePalette', e.target.value)}
-                        className="w-full px-2 py-1 text-sm text-center border-0 focus:ring-2 focus:ring-blue-400 rounded"
+                        className="w-full px-2 py-1 text-sm text-center border border-gray-300 focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 rounded outline-none"
                       />
                     </td>
                     <td className="border-2 border-gray-400 p-1">
@@ -963,7 +963,7 @@ const SuiviReception = () => {
                         step="0.01"
                         value={row.poidsBrut}
                         onChange={(e) => handleRowChange(row.id, 'poidsBrut', e.target.value)}
-                        className="w-full px-2 py-1 text-sm text-center border-0 focus:ring-2 focus:ring-blue-400 rounded"
+                        className="w-full px-2 py-1 text-sm text-center border border-gray-300 focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 rounded outline-none"
                       />
                     </td>
                     <td className="border-2 border-gray-400 p-1 bg-yellow-50">
@@ -979,7 +979,7 @@ const SuiviReception = () => {
                       <select
                         value={row.variete}
                         onChange={(e) => handleRowChange(row.id, 'variete', e.target.value)}
-                        className="w-full px-2 py-1 text-sm text-center border-0 focus:ring-2 focus:ring-blue-400 rounded"
+                        className="w-full px-2 py-1 text-sm text-center border border-gray-300 focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 rounded outline-none bg-white"
                       >
                         <option>HASS</option>
                         <option>ZUTANO</option>
@@ -992,7 +992,7 @@ const SuiviReception = () => {
                         type="text"
                         value={row.lotIntern}
                         onChange={(e) => handleRowChange(row.id, 'lotIntern', e.target.value)}
-                        className="w-full px-2 py-1 text-sm text-center border-0 focus:ring-2 focus:ring-blue-400 rounded"
+                        className="w-full px-2 py-1 text-sm text-center border border-gray-300 focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 rounded outline-none"
                       />
                     </td>
                     <td className="border-2 border-gray-400 p-1">
@@ -1000,7 +1000,7 @@ const SuiviReception = () => {
                         type="text"
                         value={row.decision}
                         onChange={(e) => handleRowChange(row.id, 'decision', e.target.value)}
-                        className="w-full px-2 py-1 text-sm text-center border-0 focus:ring-2 focus:ring-blue-400 rounded"
+                        className="w-full px-2 py-1 text-sm text-center border border-gray-300 focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 rounded outline-none"
                       />
                     </td>
                     <td className="border-2 border-gray-400 p-1 text-center">
@@ -1017,34 +1017,34 @@ const SuiviReception = () => {
                 ))}
 
                 {/* Totals Row */}
-                <tr className="bg-blue-200 font-bold">
-                  <td className="border-2 border-gray-400 p-2 text-sm"></td>
-                  <td className="border-2 border-gray-400 p-2 text-sm text-center">{totals.totalCaisses}</td>
-                  <td className="border-2 border-gray-400 p-2 text-sm text-center">{totals.totalTare}</td>
-                  <td className="border-2 border-gray-400 p-2 text-sm text-center">{totals.totalBrut}</td>
-                  <td className="border-2 border-gray-400 p-2 text-sm text-center bg-blue-300">{totals.totalPoids}</td>
-                  <td className="border-2 border-gray-400 p-2" colSpan={4}></td>
+                <tr className="bg-[#1f2a38] text-white font-bold">
+                  <td className="border-2 border-gray-600 p-2 text-sm"></td>
+                  <td className="border-2 border-gray-600 p-2 text-sm text-center">{totals.totalCaisses}</td>
+                  <td className="border-2 border-gray-600 p-2 text-sm text-center">{totals.totalTare}</td>
+                  <td className="border-2 border-gray-600 p-2 text-sm text-center">{totals.totalBrut}</td>
+                  <td className="border-2 border-gray-600 p-2 text-sm text-center bg-[#2a384a]">{totals.totalPoids}</td>
+                  <td className="border-2 border-gray-600 p-2" colSpan={4}></td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           {/* Weight Verification */}
-          <div className="mt-6 bg-gradient-to-r from-gray-50 to-gray-100 p-6 rounded-lg border-3 border-gray-400 shadow-lg">
+          <div className="mt-6 bg-gray-50 p-4 md:p-6 rounded-lg border-2 border-gray-400">
             <h3 className="font-bold text-gray-800 mb-4 text-lg">⚖️ Vérification des Poids</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-lg border-2 border-blue-300 shadow">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded border-2 border-blue-400">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">POIDS USINE (kg)</label>
                 <input
                   type="number"
                   step="0.01"
                   value={totals.poidsUsine}
                   readOnly
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-md bg-gray-100 text-center text-lg font-bold"
+                  className="w-full px-4 py-3 border-2 border-gray-400 rounded bg-gray-100 text-center text-lg font-bold"
                   title="Auto-calculé: Somme des POIDS NET"
                 />
               </div>
-              <div className="bg-white p-4 rounded-lg border-2 border-green-300 shadow">
+              <div className="bg-white p-4 rounded border-2 border-green-400">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">POIDS TICKET (kg)</label>
                 <input
                   type="number"
@@ -1059,46 +1059,46 @@ const SuiviReception = () => {
                       ecart: (poidsUsine - newTicket).toFixed(2)
                     });
                   })}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 text-center text-lg font-bold"
+                  className="w-full px-4 py-3 border-2 border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 text-center text-lg font-bold outline-none"
                 />
               </div>
-              <div className="bg-white p-4 rounded-lg border-2 border-orange-400 shadow">
+              <div className="bg-white p-4 rounded border-2 border-orange-400">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">ÉCART (kg)</label>
                 <input
                   type="text"
                   value={totals.ecart}
                   readOnly
-                  className="w-full px-4 py-3 border-3 border-orange-500 rounded-md bg-orange-50 font-bold text-orange-700 text-center text-lg"
+                  className="w-full px-4 py-3 border-2 border-orange-400 rounded bg-orange-50 font-bold text-orange-700 text-center text-lg"
                 />
               </div>
-              <div className="bg-white p-4 rounded-lg border-2 border-purple-300 shadow">
+              <div className="bg-white p-4 rounded border-2 border-purple-400">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">POIDS USINE brut (kg)</label>
                 <input
                   type="number"
                   step="0.01"
                   value={totals.poidsUsineBrut}
                   readOnly
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-md bg-gray-100 text-center text-lg font-bold"
+                  className="w-full px-4 py-3 border-2 border-gray-400 rounded bg-gray-100 text-center text-lg font-bold"
                   title="Auto-calculé: Poids Net USINE + (Nbr Caisse × 2.79) + Tare Palette"
                 />
               </div>
-              <div className="bg-white p-4 rounded-lg border-2 border-green-300 shadow">
+              <div className="bg-white p-4 rounded border-2 border-green-400">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">POIDS BRUT TICKET (kg)</label>
                 <input
                   type="text"
                   value={totals.poidsBrutTicket}
                   readOnly
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-md bg-gray-100 text-center text-lg font-bold"
+                  className="w-full px-4 py-3 border-2 border-gray-400 rounded bg-gray-100 text-center text-lg font-bold"
                   title="Auto-calculé: (Nbr Caisse Total × 2.80) + Tare Palette Total + Poids Net Ticket"
                 />
               </div>
-              <div className="bg-white p-4 rounded-lg border-2 border-orange-400 shadow">
+              <div className="bg-white p-4 rounded border-2 border-orange-400">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">ÉCART BRUT (kg)</label>
                 <input
                   type="text"
                   value={totals.ecartBrut}
                   readOnly
-                  className="w-full px-4 py-3 border-3 border-orange-500 rounded-md bg-orange-50 font-bold text-orange-700 text-center text-lg"
+                  className="w-full px-4 py-3 border-2 border-orange-400 rounded bg-orange-50 font-bold text-orange-700 text-center text-lg"
                 />
               </div>
             </div>
@@ -1112,12 +1112,12 @@ const SuiviReception = () => {
         </div>
 
         {/* Action Buttons */}
-        <div className="p-6 bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-gray-300">
+        <div className="p-4 md:p-6 bg-gray-50 border-t-2 border-gray-300">
           <div className="flex flex-wrap gap-3 justify-center mb-4">
             <button
               onClick={saveToFirebase}
               disabled={loading}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
+              className="flex items-center gap-2 px-4 md:px-6 py-3 bg-[#1f2a38] text-white rounded hover:bg-[#2a384a] transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 font-semibold"
             >
               <Database size={18} /> {loading ? 'Enregistrement...' : 'Sauvegarder Firebase'}
             </button>
@@ -1125,60 +1125,60 @@ const SuiviReception = () => {
             <button
               onClick={() => loadFromFirebase()}
               disabled={loading}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg hover:shadow-xl disabled:opacity-50"
+              className="flex items-center gap-2 px-4 md:px-6 py-3 bg-purple-600 text-white rounded hover:bg-purple-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 font-semibold"
             >
               <Archive size={18} /> Charger Archives ({archives.length})
             </button>
 
             <button
               onClick={generatePDF}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+              className="flex items-center gap-2 px-4 md:px-6 py-3 bg-red-600 text-white rounded hover:bg-red-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 font-semibold"
             >
               <FileText size={18} /> Générer PDF
             </button>
 
             <button
               onClick={exportToExcel}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+              className="flex items-center gap-2 px-4 md:px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 font-semibold"
             >
               <Download size={18} /> Export Excel
             </button>
 
             <button
               onClick={printForm}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+              className="flex items-center gap-2 px-4 md:px-6 py-3 bg-gray-600 text-white rounded hover:bg-gray-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 font-semibold"
             >
               <Printer size={18} /> Imprimer
             </button>
           </div>
 
-          <div className="text-center text-sm text-gray-600 bg-blue-50 p-3 rounded-lg border border-blue-200">
+          <div className="text-center text-sm text-gray-600 bg-blue-50 p-3 rounded border border-blue-300">
             💡 <strong>Configuration Firebase:</strong> Remplacez "YOUR-PROJECT-ID" dans le code avec votre ID de projet Firebase
           </div>
         </div>
 
         {/* Archive Section */}
-        <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
-          <div className="border-b border-gray-200 p-6">
-            <div className="flex flex-wrap justify-between items-center gap-4">
+        <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-400">
+          <div className="border-b border-gray-400 p-4 md:p-6 bg-gray-50">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center gap-3">
-                <Archive className="text-gray-600" size={24} />
-                <h3 className="text-xl font-semibold text-gray-900">Historique des Réceptions</h3>
-                <span className="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-sm font-medium">
+                <Archive className="text-gray-600" size={22} />
+                <h3 className="text-lg md:text-xl font-semibold text-gray-900">Historique des Réceptions</h3>
+                <span className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm font-medium border border-gray-400">
                   {filteredArchives.length} réception{filteredArchives.length !== 1 ? 's' : ''}
                 </span>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                 {/* Search Bar */}
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={18} />
                   <input
                     type="text"
                     placeholder="Rechercher par bon réception, responsable..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none w-64"
+                    className="pl-10 pr-4 py-2 md:py-3 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none w-full bg-white"
                   />
                 </div>
 
@@ -1187,7 +1187,7 @@ const SuiviReception = () => {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as 'date' | 'responsable' | 'bonLivraison')}
-                    className="px-4 py-3 border border-gray-300 rounded-lg focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none"
+                    className="px-3 md:px-4 py-2 md:py-3 border border-gray-400 rounded focus:border-[#1f2a38] focus:ring-2 focus:ring-[#1f2a38]/20 outline-none bg-white"
                   >
                     <option value="date">Trier par Date</option>
                     <option value="responsable">Trier par Responsable</option>
@@ -1196,7 +1196,7 @@ const SuiviReception = () => {
 
                   <button
                     onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    className="px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="px-3 md:px-4 py-2 md:py-3 border border-gray-400 rounded hover:bg-gray-100 transition-colors bg-white font-semibold"
                   >
                     {sortOrder === 'asc' ? '↑' : '↓'}
                   </button>
@@ -1204,7 +1204,7 @@ const SuiviReception = () => {
 
                 <button
                   onClick={() => setShowArchive(!showArchive)}
-                  className="flex items-center gap-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition-colors"
+                  className="flex items-center justify-center gap-2 px-4 py-2 md:py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded font-semibold transition-colors border border-gray-400"
                 >
                   {showArchive ? 'Masquer' : 'Afficher'} l'historique
                   <ChevronDown size={18} className={`transform transition ${showArchive ? 'rotate-180' : ''}`} />
@@ -1214,7 +1214,7 @@ const SuiviReception = () => {
           </div>
 
           {showArchive && (
-            <div className="p-6 bg-gray-50">
+            <div className="p-4 md:p-6 bg-gray-50">
               {isLoadingArchives ? (
                 <div className="text-center py-8">
                   <RefreshCw className="animate-spin mx-auto text-gray-600" size={32} />
@@ -1231,7 +1231,7 @@ const SuiviReception = () => {
                   {archives.length === 0 && (
                     <button
                       onClick={saveToFirebase}
-                      className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="mt-4 px-6 py-3 bg-[#1f2a38] text-white rounded hover:bg-[#2a384a] transition-colors font-semibold"
                     >
                       Sauvegarder une première réception
                     </button>
@@ -1242,32 +1242,32 @@ const SuiviReception = () => {
                   {filteredArchives.map((archived) => (
                     <div
                       key={archived.firebaseId}
-                      className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-colors p-6"
+                      className="bg-white rounded border border-gray-400 hover:border-[#1f2a38] transition-colors p-4 md:p-6"
                     >
-                      <div className="flex flex-wrap justify-between items-start gap-4">
+                      <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                         <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-3 mb-3">
-                            <h4 className="text-lg font-semibold text-gray-900">
+                          <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3">
+                            <h4 className="text-base md:text-lg font-semibold text-gray-900">
                               Bon Réception: {archived.bonReception}
                             </h4>
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              archived.type === 'BIOLOGIQUE' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                            <span className={`px-2 py-1 rounded text-xs font-medium border ${
+                              archived.type === 'BIOLOGIQUE' ? 'bg-green-100 text-green-800 border-green-300' : 'bg-blue-100 text-blue-800 border-blue-300'
                             }`}>
                               {archived.type}
                             </span>
-                            <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-xs font-medium">
+                            <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-xs font-medium border border-gray-300">
                               {formatDate(archived.dateMatricule)}
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-600 mb-3">
                             <div className="flex items-center gap-2">
                               <span className="font-semibold">Responsable:</span>
                               <span>{archived.responsable || 'Non spécifié'}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="font-semibold">Bon Livraison:</span>
-                              <span className="font-mono bg-gray-100 px-2 py-1 rounded border">
+                              <span className="font-mono bg-gray-100 px-2 py-1 rounded border border-gray-400">
                                 {archived.bonLivraison || 'N/A'}
                               </span>
                             </div>
@@ -1290,9 +1290,9 @@ const SuiviReception = () => {
                           </div>
 
                           {/* Quick row summary */}
-                          <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200">
+                          <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-400">
                             <div className="text-xs font-semibold text-gray-600 mb-2">RÉSUMÉ DES LIGNES</div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                               <div>
                                 <span className="font-medium">Total Caisses:</span>{' '}
                                 {archived.totals.totalCaisses}
@@ -1309,8 +1309,8 @@ const SuiviReception = () => {
                                 <span className="font-medium">Écart:</span>{' '}
                                 <span className={
                                   parseFloat(archived.totals.ecart) >= 0
-                                    ? 'text-green-600 font-semibold'
-                                    : 'text-red-600 font-semibold'
+                                    ? 'text-green-700 font-semibold'
+                                    : 'text-red-700 font-semibold'
                                 }>
                                   {archived.totals.ecart} kg
                                 </span>
@@ -1322,30 +1322,30 @@ const SuiviReception = () => {
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => viewArchive(archived)}
-                            className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors text-sm font-medium"
+                            className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors text-sm font-semibold"
                           >
-                            <Eye size={16} />
+                            <Eye size={14} />
                             Consulter
                           </button>
                           <button
                             onClick={() => loadArchive(archived)}
-                            className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors text-sm font-medium"
+                            className="flex items-center gap-2 px-3 py-2 bg-[#1f2a38] hover:bg-[#2a384a] text-white rounded transition-colors text-sm font-semibold"
                           >
-                            <Edit size={16} />
+                            <Edit size={14} />
                             Modifier
                           </button>
                           <button
                             onClick={() => duplicateArchive(archived)}
-                            className="flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded transition-colors text-sm font-medium"
+                            className="flex items-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors text-sm font-semibold"
                           >
-                            <FilePlus size={16} />
+                            <FilePlus size={14} />
                             Dupliquer
                           </button>
                           <button
                             onClick={() => archived.firebaseId && deleteArchive(archived.firebaseId)}
-                            className="flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded transition-colors text-sm font-medium"
+                            className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors text-sm font-semibold"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={14} />
                             Supprimer
                           </button>
                         </div>

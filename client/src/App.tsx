@@ -17,7 +17,7 @@ import ReportsPage from "@/pages/tracability/ReportsPage";
 import StatisticsPage from "@/pages/statistics-page";
 import MainLayout from "@/components/layout/main-layout";
 import LotLanding from '@/pages/qr/lot-landing';
-import { LoginPage } from "@/pages/login-page";
+import AuthPage from "@/pages/auth-page";
 import { AuthProvider } from "@/components/auth-provider";
 import { useLanguage } from "@/contexts/LanguageContext";
 import RapportGenerating from "./pages/logistique/rapport-generating";
@@ -72,6 +72,7 @@ import fullReceptionAvocat from "./pages/reception/fullReceptionAvocat.tsx"
 import nouvelleSUIVIRECEPTION from "./pages/reception/nouvelleSUIVIRECEPTION.tsx"
 import Schedules from "./pages/personnele/schedules";
 import Archife from "./pages/logistique/Archive.tsx"
+import BoxTraking from "./pages/reception/BoxTrakingComponent.tsx";
 // Public routes that don't require authentication
 function PublicRoutes() {
   return (
@@ -83,7 +84,7 @@ function PublicRoutes() {
       <Route path="/lot-detail/:lotNumber" component={MultiLotDetailPage} />
       <Route path="/api/avocado-tracking/:lotNumber/pdf" component={MultiLotDetailPage} />
       <Route path="/api/avocado-tracking/:lotNumber/generate-pdf" component={MultiLotDetailPage} />
-      <Route path="/login" component={LoginPage} />
+      <Route path="/login" component={AuthPage} />
       <Route path="/archifage" component={Archifage} />
       <Route path="/box/:boxId" component={BoxDetail} />
       <Route path="/qr/lot-landing" component={LotLanding} />
@@ -157,6 +158,7 @@ function AuthenticatedRoutes() {
         <Route path="/dechet-vendu" component={Dechetvendu} />
         <Route path="/full-Reception-Avocat" component={fullReceptionAvocat} />
         <Route path="/nouvelleSUIVIRECEPTION" component={nouvelleSUIVIRECEPTION} />
+        <Route path="/BoxTraking" component={BoxTraking} />
         
         {/* CORRECTION : Schedules dans AuthenticatedRoutes avec MainLayout */}
         <Route path="/schedules" component={Schedules} />

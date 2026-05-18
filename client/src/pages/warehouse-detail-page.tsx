@@ -981,21 +981,7 @@ export default function WarehouseDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Personnel Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Users className="mr-2 h-5 w-5" />
-            Personnel Assigné
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-neutral-500 text-sm italic mb-4">La gestion du personnel assigné à cet entrepôt sera bientôt disponible.</p>
-          <Button variant="outline">
-            Assigner du personnel
-          </Button>
-        </CardContent>
-      </Card>
+
     </div>
   );
 }

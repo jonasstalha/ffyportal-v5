@@ -49,7 +49,7 @@ import { auth } from "@/lib/firebase";
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/lib/auth";
 
-type UserRole = "admin" | "operator" | "client" | "logistique" | "quality" | "comptability" | "support" | "production" | "reception";
+type UserRole = "admin" | "operator" | "client" | "logistics" | "quality" | "comptabilite" | "support" | "production" | "reception";
 
 interface UserData {
   uid: string;
@@ -69,7 +69,7 @@ const registerSchema = z.object({
   password: z.string().min(6, "Le mot de passe doit contenir au moins 6 caractères"),
   confirmPassword: z.string(),
   fullName: z.string().min(2, "Le nom complet est requis"),
-  role: z.enum(["admin", "operator", "client", "logistique", "quality", "comptability", "support", "production", "reception"]),
+  role: z.enum(["admin", "operator", "client", "logistics", "quality", "comptabilite", "support", "production", "reception"]),
 }).refine((data) => {
   return data.password === data.confirmPassword;
 }, {
@@ -80,7 +80,7 @@ const registerSchema = z.object({
 const editUserSchema = z.object({
   email: z.string().email("Email invalide"),
   fullName: z.string().min(2, "Le nom complet est requis"),
-  role: z.enum(["admin", "operator", "client", "logistique", "quality", "comptability", "support", "production", "reception"]),
+  role: z.enum(["admin", "operator", "client", "logistics", "quality", "comptabilite", "support", "production", "reception"]),
 });
 
 function UsersPage() {
@@ -426,9 +426,9 @@ function UsersPage() {
       admin: "Administrateur",
       operator: "Opérateur",
       client: "Client",
-      logistique: "Logistique",
+      logistics: "Logistique",
       quality: "Qualité",
-      comptability: "Comptabilité",
+      comptabilite: "Comptabilité",
       support: "Support",
       production: "Production",
       reception: "Réception"
@@ -441,9 +441,9 @@ function UsersPage() {
       admin: "bg-purple-100 text-purple-800",
       operator: "bg-blue-100 text-blue-800",
       client: "bg-yellow-100 text-yellow-800",
-      logistique: "bg-green-100 text-green-800",
+      logistics: "bg-green-100 text-green-800",
       quality: "bg-red-100 text-red-800",
-      comptability: "bg-orange-100 text-orange-800",
+      comptabilite: "bg-orange-100 text-orange-800",
       support: "bg-teal-100 text-teal-800",
       production: "bg-pink-100 text-pink-800",
       reception: "bg-indigo-100 text-indigo-800"
@@ -564,12 +564,11 @@ function UsersPage() {
                               </FormControl>
                               <SelectContent>
                                 <SelectItem value="admin">Administrateur</SelectItem>
-                                <SelectItem value="operator">Opérateur</SelectItem>
+                      
                                 <SelectItem value="client">Client</SelectItem>
-                                <SelectItem value="logistique">Logistique</SelectItem>
+                                <SelectItem value="logistics">Logistique</SelectItem>
                                 <SelectItem value="quality">Qualité</SelectItem>
-                                <SelectItem value="comptability">Comptabilité</SelectItem>
-                                <SelectItem value="support">Support</SelectItem>
+                                <SelectItem value="comptabilite">Comptabilité</SelectItem>
                                 <SelectItem value="production">Production</SelectItem>
                                 <SelectItem value="reception">Réception</SelectItem>
                               </SelectContent>
@@ -609,9 +608,9 @@ function UsersPage() {
                 <SelectItem value="admin">Administrateur</SelectItem>
                 <SelectItem value="operator">Opérateur</SelectItem>
                 <SelectItem value="client">Client</SelectItem>
-                <SelectItem value="logistique">Logistique</SelectItem>
+                <SelectItem value="logistics">Logistique</SelectItem>
                 <SelectItem value="quality">Qualité</SelectItem>
-                <SelectItem value="comptability">Comptabilité</SelectItem>
+                <SelectItem value="comptabilite">Comptabilité</SelectItem>
                 <SelectItem value="support">Support</SelectItem>
                 <SelectItem value="production">Production</SelectItem>
                 <SelectItem value="reception">Réception</SelectItem>
@@ -755,9 +754,9 @@ function UsersPage() {
                             <SelectItem value="admin">Administrateur</SelectItem>
                             <SelectItem value="operator">Opérateur</SelectItem>
                             <SelectItem value="client">Client</SelectItem>
-                            <SelectItem value="logistique">Logistique</SelectItem>
+                            <SelectItem value="logistics">Logistique</SelectItem>
                             <SelectItem value="quality">Qualité</SelectItem>
-                            <SelectItem value="comptability">Comptabilité</SelectItem>
+                            <SelectItem value="comptabilite">Comptabilité</SelectItem>
                             <SelectItem value="support">Support</SelectItem>
                             <SelectItem value="production">Production</SelectItem>
                             <SelectItem value="reception">Réception</SelectItem>

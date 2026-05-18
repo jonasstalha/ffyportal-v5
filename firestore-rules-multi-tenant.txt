@@ -1,0 +1,310 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================================
+    // HELPER FUNCTIONS
+    // ============================================================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Get user's company ID from custom claims
+    function getUserCompanyId() {
+      return request.auth.token.companyId;
+    }
+    
+    // Get user's role from custom claims
+    function getUserRole() {
+      return request.auth.token.get('role', 'employee');
+    }
+    
+    // Check if user is admin of their company
+    function isAdmin() {
+      return getUserRole() == 'admin';
+    }
+    
+    // Check if user is admin or manager
+    function isManager() {
+      return getUserRole() in ['admin', 'manager'];
+    }
+    
+    // Check if resource belongs to user's company
+    function belongsToUserCompany(resource) {
+      return resource.data.companyId == getUserCompanyId();
+    }
+    
+    // Check if document is being created with correct companyId
+    function isValidCompanyId() {
+      return request.resource.data.companyId == getUserCompanyId();
+    }
+    
+    // ============================================================================
+    // COMPANIES COLLECTION
+    // ============================================================================
+    
+    match /companies/{companyId} {
+      // Only company admin can read/write their own company doc
+      allow read: if isAuthenticated() && 
+                     getUserCompanyId() == companyId;
+      
+      allow create: if isAuthenticated() && 
+                       request.resource.data.ownerId == request.auth.uid &&
+                       request.resource.data.name is string &&
+                       request.resource.data.createdAt is timestamp &&
+                       request.resource.data.status in ['active', 'suspended', 'cancelled'];
+      
+      allow update: if isAuthenticated() && 
+                       isAdmin() &&
+                       getUserCompanyId() == companyId &&
+                       // Prevent changing ownerId maliciously
+                       (request.resource.data.ownerId == resource.data.ownerId);
+      
+      allow delete: if false; // Never allow deletion
+      
+      // Subcollections: users, clients, invoices, reports, etc.
+      match /{collection}/{document=**} {
+        allow read, write: if isAuthenticated() && 
+                              getUserCompanyId() == companyId &&
+                              request.resource.data.companyId == companyId;
+      }
+    }
+    
+    // ============================================================================
+    // USERS COLLECTION (ROOT LEVEL)
+    // ============================================================================
+    
+    match /users/{userId} {
+      // User can read their own doc
+      // Admins can read all users in their company
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == userId || 
+                      (isAdmin() && resource.data.companyId == getUserCompanyId()));
+      
+      // User can create their own doc during sign-up
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == userId &&
+                       isValidCompanyId() &&
+                       request.resource.data.email is string &&
+                       request.resource.data.displayName is string &&
+                       request.resource.data.role in ['admin', 'manager', 'employee'] &&
+                       request.resource.data.createdAt is timestamp;
+      
+      // User can update their own doc
+      // Admin can update other users in their company
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       (request.auth.uid == userId || isAdmin()) &&
+                       // Prevent changing companyId
+                       request.resource.data.companyId == resource.data.companyId;
+      
+      // Only admin can delete (soft-delete via status)
+      allow delete: if isAuthenticated() && 
+                       isAdmin() &&
+                       belongsToUserCompany(resource) &&
+                       getUserCompanyId() == resource.data.companyId;
+    }
+    
+    // ============================================================================
+    // INVOICES COLLECTION
+    // ============================================================================
+    
+    match /invoices/{invoiceId} {
+      // Read: authenticated users in the same company
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId();
+      
+      // Create: any company member
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId() &&
+                       request.resource.data.invoiceNumber is string &&
+                       request.resource.data.createdAt is timestamp;
+      
+      // Update: created by user, or manager/admin
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       (resource.data.createdBy == request.auth.uid || isManager());
+      
+      // Delete: only manager/admin
+      allow delete: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       isManager();
+    }
+    
+    // ============================================================================
+    // CLIENTS COLLECTION
+    // ============================================================================
+    
+    match /clients/{clientId} {
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId();
+      
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId() &&
+                       request.resource.data.name is string &&
+                       request.resource.data.email is string;
+      
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       isManager();
+      
+      allow delete: if isAuthenticated() && 
+                       isAdmin() &&
+                       belongsToUserCompany(resource);
+    }
+    
+    // ============================================================================
+    // PRODUCTION REPORTS COLLECTION
+    // ============================================================================
+    
+    match /productionReports/{reportId} {
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId();
+      
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId() &&
+                       request.resource.data.createdAt is timestamp;
+      
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       (resource.data.createdBy == request.auth.uid || isManager());
+      
+      allow delete: if isAuthenticated() && 
+                       isManager() &&
+                       belongsToUserCompany(resource);
+    }
+    
+    // ============================================================================
+    // EXPORTS COLLECTION
+    // ============================================================================
+    
+    match /exports/{exportId} {
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId();
+      
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId();
+      
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       isManager();
+      
+      allow delete: if isAuthenticated() && 
+                       isAdmin() &&
+                       belongsToUserCompany(resource);
+    }
+    
+    // ============================================================================
+    // PACKAGING TRACES COLLECTION
+    // ============================================================================
+    
+    match /packaging_traces/{docId} {
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId();
+      
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId() &&
+                       request.resource.data.lotNumber is string &&
+                       request.resource.data.status in ['brouillon', 'en_cours', 'termine'] &&
+                       request.resource.data.createdAt is timestamp;
+      
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       isManager();
+      
+      allow delete: if false; // Prevent deletion for audit trail
+    }
+    
+    // ============================================================================
+    // RECEPTION ENTRIES COLLECTION
+    // ============================================================================
+    
+    match /receptionEntries/{entryId} {
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId();
+      
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId() &&
+                       request.resource.data.lotNumber is string &&
+                       request.resource.data.receptionDateTime is timestamp;
+      
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource) &&
+                       isManager();
+      
+      allow delete: if false; // Prevent deletion for audit trail
+    }
+    
+    // ============================================================================
+    // BATCH UPLOADS COLLECTION
+    // ============================================================================
+    
+    match /batchUploads/{batchId} {
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId();
+      
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId();
+      
+      allow update: if isAuthenticated() && 
+                       belongsToUserCompany(resource);
+      
+      allow delete: if isAuthenticated() && 
+                       isAdmin() &&
+                       belongsToUserCompany(resource);
+    }
+    
+    // ============================================================================
+    // COMPANY INVITATIONS SUBCOLLECTION
+    // ============================================================================
+    
+    match /companies/{companyId}/invitations/{inviteId} {
+      allow read: if isAuthenticated() && 
+                     (getUserCompanyId() == companyId || 
+                      // Allow reading own invitation codes
+                      request.auth.token.email == resource.data.invitedEmail);
+      
+      allow create: if isAuthenticated() && 
+                       getUserCompanyId() == companyId &&
+                       isAdmin() &&
+                       request.resource.data.email is string &&
+                       request.resource.data.createdAt is timestamp &&
+                       request.resource.data.status == 'pending';
+      
+      allow update: if isAuthenticated() && 
+                       isAdmin() &&
+                       getUserCompanyId() == companyId;
+      
+      allow delete: if isAuthenticated() && 
+                       isAdmin() &&
+                       getUserCompanyId() == companyId;
+    }
+    
+    // ============================================================================
+    // AUDIT LOG COLLECTION (append-only)
+    // ============================================================================
+    
+    match /auditLogs/{logId} {
+      allow read: if isAuthenticated() && 
+                     resource.data.companyId == getUserCompanyId() &&
+                     isManager();
+      
+      allow create: if isAuthenticated() && 
+                       isValidCompanyId();
+      
+      allow update, delete: if false; // Immutable
+    }
+    
+    // ============================================================================
+    // CATCH-ALL DENY
+    // ============================================================================
+    
+    // Deny everything not explicitly allowed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

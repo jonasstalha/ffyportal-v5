@@ -1280,84 +1280,7 @@ const generatePDF = useCallback(async () => {
     setIsGeneratingPDF(false);
   }
 }, [currentData, currentLot]);
-  // Generate Excel/CSV
-  const generateExcel = () => {
-    if (!currentData || !currentLot) return;
 
-    setIsGeneratingExcel(true);
-    try {
-      let csv = 'PACKING LIST - FRUITS FOR YOU\n';
-      csv += `Lot: ${currentLot.lotNumber}\n`;
-      csv += `Date: ${new Date().toLocaleDateString('fr-FR')}\n\n`;
-
-      csv += 'ORIGINE\n';
-      csv += `${currentData.origin.companyName}\n`;
-      csv += `${currentData.origin.address}\n`;
-      csv += `${currentData.origin.city}\n\n`;
-
-      csv += 'DESTINATION\n';
-      csv += `${currentData.destination.companyName}\n`;
-      csv += `${currentData.destination.address}\n`;
-      csv += `${currentData.destination.city}\n\n`;
-
-      csv += 'TRANSPORT\n';
-      csv += `Truck N°,${currentData.transport.truckNumber}\n`;
-      csv += `Chauffeur N°,${currentData.transport.chauffeurNumber}\n`;
-      csv += `Transporteur,${currentData.transport.transporteur}\n`;
-      csv += `Scellé,${currentData.transport.scelle}\n\n`;
-
-      csv += 'DETAILS TECHNIQUES\n';
-      csv += `Date Production,${currentData.technicalDetails.dateProduction}\n`;
-      csv += `Date Departure,${currentData.technicalDetails.dateDeparture}\n`;
-      csv += `Lot Numbers,${currentData.technicalDetails.lotNumbers}\n`;
-      csv += `GGN,${currentData.technicalDetails.ggn}\n`;
-      csv += `Order N°,${currentData.technicalDetails.orderNumber}\n`;
-      csv += `Poids Net Total,${currentData.technicalDetails.poidsNetTotal} KG\n`;
-      csv += `Poids Brut Total,${currentData.technicalDetails.poidsBrutTotal} KG\n\n`;
-
-      csv += 'PALETTES\n';
-      csv += 'N°,Produit,Calibre,Palette Nr,Caisses/Palette\n';
-      currentData.palletRows.forEach(row => {
-        csv += `${row.numero},${row.produit},${row.calibre},${row.paletteNr},${row.caissesPerPalette}\n`;
-      });
-
-      csv += '\nCALIBRE SUMMARY\n';
-      csv += 'Calibre,Palettes,Caisses\n';
-      const calculations = calculateRealSummary(currentData.palletRows);
-      Object.entries(calculations.calibreSummary).forEach(([cal, data]) => {
-        const typedData = data as { palettes: number; caisses: number };
-        if (typedData.palettes > 0) {
-          csv += `${cal},${typedData.palettes},${typedData.caisses}\n`;
-        }
-      });
-
-      csv += '\nPALLET TYPES\n';
-      csv += `Type 90,${calculations.palletTypes.type90}\n`;
-      csv += `Type 10,${calculations.palletTypes.type108}\n`;
-      csv += `Type 220,${calculations.palletTypes.type220}\n`;
-      csv += `Type 264,${calculations.palletTypes.type264}\n`;
-      csv += `Total,${calculations.totalPallets}\n`;
-
-      // Create download
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `PackingList_${currentLot.lotNumber}_${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      showSuccess('Fichier Excel généré avec succès!');
-
-    } catch (error) {
-      console.error('Error generating Excel:', error);
-      alert('Erreur lors de la génération du fichier Excel');
-    } finally {
-      setIsGeneratingExcel(false);
-    }
-  };
 
   // Fixing implicit 'any' types
   const showSuccess = (message: string) => {
@@ -1375,27 +1298,7 @@ const generatePDF = useCallback(async () => {
     return configs[status];
   };
 
-  // Excel-style keyboard navigation
-  const handleKeyDown = (e: React.KeyboardEvent, rowIndex: number, field: string) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (currentData && rowIndex < currentData.palletRows.length - 1) {
-        setSelectedCell({ row: rowIndex + 1, field });
-      }
-    } else if (e.key === 'Escape') {
-      setSelectedCell(null);
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      const fields = ['produit', 'calibre', 'paletteNr', 'caissesPerPalette'];
-      const currentFieldIndex = fields.indexOf(field);
-      const nextField = fields[currentFieldIndex + 1];
-      if (nextField) {
-        setSelectedCell({ row: rowIndex, field: nextField });
-      } else if (currentData && rowIndex < currentData.palletRows.length - 1) {
-        setSelectedCell({ row: rowIndex + 1, field: fields[0] });
-      }
-    }
-  };
+
 
   const calculations = currentData ? calculateRealSummary(currentData.palletRows) : null;
 
@@ -1622,7 +1525,7 @@ const generatePDF = useCallback(async () => {
         <div className="bg-white rounded-md shadow-sm border border-gray-200 p-4">
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setShowGenerateModal(true)}
+              onClick={() => { if (!isGeneratingPDF) generatePDF(); }}
               disabled={isGeneratingPDF}
               className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -1633,26 +1536,8 @@ const generatePDF = useCallback(async () => {
                 </>
               ) : (
                 <>
-                  <FilePlus size={18} />
-                  Générer PDF
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={generateExcel}
-              disabled={isGeneratingExcel}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-300 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isGeneratingExcel ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Génération...
-                </>
-              ) : (
-                <>
-                  <FileSpreadsheet size={18} />
-                  Excel
+                  <Package size={18} />
+                   packing list
                 </>
               )}
             </button>

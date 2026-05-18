@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import logoUrl from '../../../assets/icon.png';
-import { FilePlus, Package, Plus, RefreshCw, Save, Trash2, Copy, Archive, Download, Eye, Search } from 'lucide-react';
+import { FilePlus, Package, Plus, RefreshCw, Save, Trash2, Copy, Archive, Download, Eye, Search, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { archiveReceptionControl, deleteReceptionArchive, getReceptionArchives, saveReceptionControl } from '../../lib/receptionControlService';
 
 // Data model for avocado quality control
@@ -50,6 +50,24 @@ interface QualityControlLot {
   updatedAt: Date;
 }
 
+const SAMPLE_WEIGHT = 230; // 1 Caisse (23KG) / 12palette = 230kg total
+
+// Color constants with your new scheme
+const COLORS = {
+  primary: '#161f2e', // Dark blue for main elements
+  primaryLight: '#2d3748',
+  accent: '#3b82f6', // Blue
+  success: '#10b981', // Green
+  warning: '#f59e0b', // Amber
+  danger: '#ef4444', // Red
+  lightBg: '#f8fafc',
+  border: '#e2e8f0',
+  text: '#1e293b',
+  textLight: '#64748b',
+  tableHeader: '#161f2e',
+  tableSubheader: '#e2e8f0',
+};
+
 const defaultQualityControlData = (): QualityControlData => ({
   header: {
     ref: 'SMQ.ENR.10',
@@ -75,10 +93,10 @@ const defaultQualityControlData = (): QualityControlData => ({
   },
   qualityChecks: {
     diseaseTraces: { count: '', weight: '', percentage: '' },
-    ripeFruit: { count: '', weight: '', percentage: '' },
-    dirtyFruit: { count: '', weight: '', percentage: '' },
-    sunBurns: { count: '', weight: '', percentage: '' },
-    withoutStem: { count: '', weight: '', percentage: '' },
+    ripeFruit: { count: '', weight: '', percentage: '' }, // Changed from "string" to empty string
+    dirtyFruit: { count: '', weight: '', percentage: '' }, // Changed from "string" to empty string
+    sunBurns: { count: '', weight: '', percentage: '' }, // Changed from "string" to empty string
+    withoutStem: { count: '', weight: '', percentage: '' }, // Changed from "string" to empty string
   },
   totalDefects: '',
   color: '',
@@ -104,6 +122,15 @@ const ControleReception: React.FC = () => {
   const [loadingArchives, setLoadingArchives] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showArchives, setShowArchives] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // Handle responsive behavior
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Load archives from Firebase on mount
   useEffect(() => {
@@ -111,7 +138,6 @@ const ControleReception: React.FC = () => {
       try {
         setLoadingArchives(true);
         const items = await getReceptionArchives();
-        // Map to local QualityControlLot shape
         const mapped: QualityControlLot[] = items.map((it) => ({
           id: it.id,
           lotNumber: it.lotNumber,
@@ -221,7 +247,6 @@ const ControleReception: React.FC = () => {
         status: currentLot.status,
         data: currentLot.data as any,
       });
-      // Update local id if new
       if (id !== currentLot.id) {
         setLots(lots.map(l => l.id === currentLotId ? { ...l, id } : l));
         setCurrentLotId(id);
@@ -245,7 +270,6 @@ const ControleReception: React.FC = () => {
         status: 'termine',
         data: currentLot.data as any,
       });
-      // Prepend to archives list
       const archivedLot: QualityControlLot = {
         ...currentLot,
         id,
@@ -267,6 +291,7 @@ const ControleReception: React.FC = () => {
     if (!currentLot) return;
     updateCurrentLot(archive.data);
     alert("Archive chargée dans l'éditeur");
+    setShowArchives(false);
   };
 
   const deleteArchive = async (archiveId: string) => {
@@ -281,6 +306,79 @@ const ControleReception: React.FC = () => {
       alert('Suppression impossible');
     }
   };
+
+  const calculatePercentage = (weight: string): string => {
+    const weightNum = parseFloat(weight) || 0;
+    return ((weightNum / SAMPLE_WEIGHT)).toFixed(2);
+  };
+
+  const computeTotalDefects = (qc: QualityControlData['qualityChecks']): string => {
+    const percentages = [
+      parseFloat(calculatePercentage(qc.diseaseTraces.weight)) || 0,
+      parseFloat(calculatePercentage(qc.ripeFruit.weight)) || 0,
+      parseFloat(calculatePercentage(qc.dirtyFruit.weight)) || 0,
+      parseFloat(calculatePercentage(qc.sunBurns.weight)) || 0,
+      parseFloat(calculatePercentage(qc.withoutStem.weight)) || 0,
+    ];
+    
+    const sum = percentages.reduce((acc, curr) => acc + curr, 0);
+    return sum.toFixed(2);
+  };
+
+  // Auto-calculate percentages and total defects when weight values change
+  useEffect(() => {
+    if (!currentLot) return;
+    
+    const qc = currentLot.data.qualityChecks;
+    
+    const updatedQc = {
+      ...qc,
+      diseaseTraces: {
+        ...qc.diseaseTraces,
+        percentage: calculatePercentage(qc.diseaseTraces.weight)
+      },
+      ripeFruit: {
+        ...qc.ripeFruit,
+        percentage: calculatePercentage(qc.ripeFruit.weight)
+      },
+      dirtyFruit: {
+        ...qc.dirtyFruit,
+        percentage: calculatePercentage(qc.dirtyFruit.weight)
+      },
+      sunBurns: {
+        ...qc.sunBurns,
+        percentage: calculatePercentage(qc.sunBurns.weight)
+      },
+      withoutStem: {
+        ...qc.withoutStem,
+        percentage: calculatePercentage(qc.withoutStem.weight)
+      }
+    };
+    
+    const totalDefects = computeTotalDefects(updatedQc);
+    
+    // Update only if values have changed
+    if (
+      qc.diseaseTraces.percentage !== updatedQc.diseaseTraces.percentage ||
+      qc.ripeFruit.percentage !== updatedQc.ripeFruit.percentage ||
+      qc.dirtyFruit.percentage !== updatedQc.dirtyFruit.percentage ||
+      qc.sunBurns.percentage !== updatedQc.sunBurns.percentage ||
+      qc.withoutStem.percentage !== updatedQc.withoutStem.percentage ||
+      currentLot.data.totalDefects !== totalDefects
+    ) {
+      updateCurrentLot({
+        qualityChecks: updatedQc,
+        totalDefects
+      });
+    }
+  }, [
+    currentLot?.data.qualityChecks.diseaseTraces.weight,
+    currentLot?.data.qualityChecks.ripeFruit.weight,
+    currentLot?.data.qualityChecks.dirtyFruit.weight,
+    currentLot?.data.qualityChecks.sunBurns.weight,
+    currentLot?.data.qualityChecks.withoutStem.weight,
+    currentLot?.data.totalDefects,
+  ]);
 
   const generatePDF = async () => {
     if (!currentLot) return;
@@ -406,7 +504,6 @@ const ControleReception: React.FC = () => {
     const rec = currentLot.data.header;
     const qc = currentLot.data.qualityChecks;
     
-    // FIX: Use actual weight values from currentLot data instead of empty strings
     autoTable(doc, {
       startY: margin + headerH + 4,
       styles: { 
@@ -450,7 +547,7 @@ const ControleReception: React.FC = () => {
         [{ content: 'Poids NET', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.netWeight || '', colSpan: 5 }],
         [{ content: 'N° de lot du produit', styles: { fillColor: colors.lime300, fontStyle: 'bold' } }, { content: rec.productLotNumber || '', colSpan: 5 }],
 
-        // Quality checks with FIXED weight values
+        // Quality checks with AUTO-CALCULATED percentages
         [
           { content: 'Nbr Fruit avec trace de maladie', rowSpan: 2, styles: { fillColor: colors.lime300, fontStyle: 'bold' } },
           { content: 'Nbr de fruits (max 10u)', styles: { fillColor: colors.lime200, fontStyle: 'bold', halign: 'center' } },
@@ -460,7 +557,7 @@ const ControleReception: React.FC = () => {
         ],
         [
           { content: qc.diseaseTraces.count || '' },
-          { content: qc.diseaseTraces.weight || '' }, // FIX: Now shows actual value
+          { content: qc.diseaseTraces.weight || '' },
           { content: qc.diseaseTraces.percentage || '' },
           { content: '', colSpan: 2 }
         ],
@@ -474,7 +571,7 @@ const ControleReception: React.FC = () => {
         ],
         [
           { content: qc.ripeFruit.count || '' },
-          { content: qc.ripeFruit.weight || '' }, // FIX: Now shows actual value
+          { content: qc.ripeFruit.weight || '' },
           { content: qc.ripeFruit.percentage || '' },
           { content: '', colSpan: 2 }
         ],
@@ -488,7 +585,7 @@ const ControleReception: React.FC = () => {
         ],
         [
           { content: qc.dirtyFruit.count || '' },
-          { content: qc.dirtyFruit.weight || '' }, // FIX: Now shows actual value
+          { content: qc.dirtyFruit.weight || '' },
           { content: qc.dirtyFruit.percentage || '' },
           { content: '', colSpan: 2 }
         ],
@@ -502,7 +599,7 @@ const ControleReception: React.FC = () => {
         ],
         [
           { content: qc.sunBurns.count || '' },
-          { content: qc.sunBurns.weight || '' }, // FIX: Now shows actual value
+          { content: qc.sunBurns.weight || '' },
           { content: qc.sunBurns.percentage || '' },
           { content: '', colSpan: 2 }
         ],
@@ -516,7 +613,7 @@ const ControleReception: React.FC = () => {
         ],
         [
           { content: qc.withoutStem.count || '' },
-          { content: qc.withoutStem.weight || '' }, // FIX: Now shows actual value
+          { content: qc.withoutStem.weight || '' },
           { content: qc.withoutStem.percentage || '' },
           { content: '', colSpan: 2 }
         ],
@@ -564,61 +661,78 @@ const ControleReception: React.FC = () => {
     doc.save(fileName);
   };
 
-  const computeTotalDefects = (qc: QualityControlData['qualityChecks']): string => {
-    const keys = ['diseaseTraces', 'ripeFruit', 'dirtyFruit', 'sunBurns', 'withoutStem'] as const;
-    const sum = keys.reduce((acc, k) => acc + (parseFloat(qc[k].percentage) || 0), 0);
-    return sum.toFixed(2);
-  };
-
   // Helper function to render a checkbox symbol
   const checkbox = (checked: boolean): string => (checked ? '☑' : '☐');
 
   if (!currentLot) return <div>Chargement...</div>;
 
   return (
-    <div className="bg-gradient-to-b from-green-50 to-white min-h-screen p-4">
-      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-xl">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+      <div className="max-w-7xl mx-auto">
         {/* Header Controls */}
-        <div className="bg-white border-b p-4 shadow-sm rounded-t-xl sticky top-0 z-10">
-          <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-center mb-2">
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-6 gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">Fiche de Contrôle à la Réception - Avocat</h1>
-              <p className="text-sm text-gray-500">Créez, éditez et archivez vos contrôles de réception.</p>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                Fiche de Contrôle à la Réception - Avocat
+              </h1>
+              <p className="text-gray-600">Créez, éditez et archivez vos contrôles de réception</p>
             </div>
-            <div className="flex gap-2">
-              <button onClick={createNewLot} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                <Plus size={20} /> Nouveau Lot
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={createNewLot}
+                className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-3 rounded-xl hover:bg-gray-50 transition-all hover:shadow-md"
+              >
+                <Plus size={20} />
+                Nouveau Lot
               </button>
-              <button onClick={saveDraftToFirebase} disabled={saving} className="flex items-center gap-2 bg-emerald-600 disabled:opacity-60 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors">
-                <Save size={18} /> {saving ? 'Sauvegarde...' : 'Enregistrer'}
+              <button
+                onClick={saveDraftToFirebase}
+                disabled={saving}
+                className="flex items-center gap-2 bg-[#161f2e] text-white px-5 py-3 rounded-xl hover:bg-[#1e293b] transition-all disabled:opacity-50"
+              >
+                <Save size={20} />
+                {saving ? 'Sauvegarde...' : 'Enregistrer'}
               </button>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-2 overflow-x-auto pb-2 pt-1">
+          <div className="flex overflow-x-auto pb-2 gap-2">
             {lots.map((lot) => (
-              <div key={lot.id} className="flex items-center bg-gray-100 rounded-lg overflow-hidden">
+              <div key={lot.id} className="flex items-center bg-gray-100 rounded-xl overflow-hidden min-w-fit">
                 <button
                   onClick={() => setCurrentLotId(lot.id)}
-                  className={`px-4 py-2 flex items-center gap-2 transition-all ${currentLotId === lot.id ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
+                  className={`px-4 py-3 flex items-center gap-3 transition-all ${
+                    currentLotId === lot.id 
+                      ? 'bg-[#161f2e] text-white' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
                 >
-                  <Package size={16} />
-                  {lot.lotNumber}
-                  <span className={`px-2 py-1 text-xs rounded-full ${lot.status === 'termine' ? 'bg-green-200 text-green-800' :
-                    lot.status === 'en_cours' ? 'bg-yellow-200 text-yellow-800' :
-                      'bg-gray-200 text-gray-600'
-                    }`}>
+                  <Package size={18} />
+                  <span className="font-medium">{lot.lotNumber}</span>
+                  <span className={`px-3 py-1 text-xs rounded-full font-medium ${
+                    lot.status === 'termine' ? 'bg-green-100 text-green-800' :
+                    lot.status === 'en_cours' ? 'bg-amber-100 text-amber-800' :
+                    'bg-gray-200 text-gray-600'
+                  }`}>
                     {lot.status}
                   </span>
                 </button>
                 <div className="flex">
-                  <button onClick={() => duplicateLot(lot.id)} className="p-2 text-gray-600 hover:text-blue-600" title="Dupliquer">
+                  <button
+                    onClick={() => duplicateLot(lot.id)}
+                    className="p-3 text-gray-600 hover:text-blue-600 hover:bg-gray-50 transition-colors"
+                    title="Dupliquer"
+                  >
                     <Copy size={16} />
                   </button>
                   {lots.length > 1 && (
-                    <button onClick={() => removeLot(lot.id)} className="p-2 text-gray-600 hover:text-red-600" title="Supprimer">
+                    <button
+                      onClick={() => removeLot(lot.id)}
+                      className="p-3 text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+                      title="Supprimer"
+                    >
                       <Trash2 size={16} />
                     </button>
                   )}
@@ -628,114 +742,107 @@ const ControleReception: React.FC = () => {
           </div>
         </div>
 
-        {/* Form-like Printed Layout */}
-        <div className="p-6">
-          <div className="max-w-5xl mx-auto bg-white shadow-lg">
-            {/* Header */}
-            <div className="border-2 border-black">
-              <div className="flex">
-                {/* Logo */}
-                <div className="w-20 h-16 border-r border-black flex items-center justify-center bg-white">
-                  <img src={logoUrl} alt="Logo" className="max-h-12 max-w-16 object-contain" />
+        {/* Form-like Printed Layout - Keeping Original Table Structure */}
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6">
+          {/* Form Header */}
+          <div className="bg-[#161f2e] text-white p-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="bg-white p-2 rounded-lg">
+                  <img src={logoUrl} alt="Logo" className="h-12 w-12 object-contain" />
                 </div>
-
-                {/* Title */}
-                <div className="flex-1 border-r border-black">
-                  <div className="bg-lime-300 text-center py-1 border-b border-black font-bold text-sm">
-                    Fiche de contrôle à la réception (avocat)
-                  </div>
-                  <div className="text-center py-2 font-bold text-sm">
-                    SYSTEME DE GESTION DE LA QUALITE
-                  </div>
+                <div>
+                  <h2 className="text-xl font-bold">Fiche de contrôle à la réception (avocat)</h2>
+                  <p className="text-gray-300">SYSTEME DE GESTION DE LA QUALITE</p>
                 </div>
-
-                {/* Info */}
-                <div className="w-40">
-                  <div className="border-b border-black p-1 text-xs">
-                    <label className="block font-semibold mb-0.5">Réf :</label>
-                    <input
-                      type="text"
-                      value={currentLot.data.header.ref}
-                      onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, ref: e.target.value } })}
-                      className="w-full text-xs border border-black rounded px-1 py-0.5"
-                    />
-                  </div>
-                  <div className="border-b border-black p-1 text-xs">
-                    <label className="block font-semibold mb-0.5">Version :</label>
-                    <input
-                      type="text"
-                      value={currentLot.data.header.version}
-                      onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, version: e.target.value } })}
-                      className="w-full text-xs border border-black rounded px-1 py-0.5"
-                    />
-                  </div>
-                  <div className="p-1 text-xs">
-                    <label className="block font-semibold mb-0.5">Date :</label>
-                    <input
-                      type="text"
-                      value={currentLot.data.header.date}
-                      onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, date: e.target.value } })}
-                      className="w-full text-xs border border-black rounded px-1 py-0.5"
-                    />
-                  </div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 min-w-[180px]">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-300">Réf :</span>
+                  <input
+                    type="text"
+                    value={currentLot.data.header.ref}
+                    onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, ref: e.target.value } })}
+                    className="bg-transparent border-b border-gray-400 text-white text-right focus:outline-none focus:border-white w-24"
+                  />
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-300">Version :</span>
+                  <input
+                    type="text"
+                    value={currentLot.data.header.version}
+                    onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, version: e.target.value } })}
+                    className="bg-transparent border-b border-gray-400 text-white text-right focus:outline-none focus:border-white w-24"
+                  />
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-300">Date :</span>
+                  <input
+                    type="text"
+                    value={currentLot.data.header.date}
+                    onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, date: e.target.value } })}
+                    className="bg-transparent border-b border-gray-400 text-white text-right focus:outline-none focus:border-white w-24"
+                  />
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Form Content */}
-            <div className="border-x-2 border-b-2 border-black">
-              <table className="w-full text-xs border-collapse">
+          {/* Form Content - Original Table Structure with Enhanced UI */}
+          <div className="p-4 md:p-6">
+            <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-sm border-collapse">
                 <tbody>
                   {/* Date Row */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 w-32 font-bold">Date</td>
-                    <td className="border border-black p-1 w-24">
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold text-sm w-32">Date</td>
+                    <td className="p-3 border-r border-gray-200 w-24">
                       <input
                         type="date"
                         value={currentLot.data.header.deliveryDate}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, deliveryDate: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">
                       Gamme de
                       <br />
                       produit :
                     </td>
-                    <td className="border border-black p-1">
-                      <div className="mb-1">
-                        <label className="flex items-center gap-1">
+                    <td className="p-3 border-r border-gray-200">
+                      <div className="mb-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={currentLot.data.header.conventionnel}
                             onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, conventionnel: e.target.checked } })}
-                            className="text-xs"
+                            className="h-4 w-4 text-blue-600 rounded"
                           />
                           <span>Conventionnel</span>
                         </label>
                       </div>
                       <div>
-                        <label className="flex items-center gap-1">
+                        <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={currentLot.data.header.bio}
                             onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, bio: e.target.checked } })}
-                            className="text-xs"
+                            className="h-4 w-4 text-blue-600 rounded"
                           />
                           <span>BIO</span>
                         </label>
                       </div>
                     </td>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Prestataire :</td>
-                    <td className="border border-black p-1 w-48">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Prestataire :</td>
+                    <td className="p-3 w-48">
                       <input
                         type="text"
                         value={currentLot.data.header.provider}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, provider: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">
                       Protocole :
                       <br />
                       1 Caisse (23KG) / 12palette
@@ -743,168 +850,168 @@ const ControleReception: React.FC = () => {
                   </tr>
 
                   {/* N° de Bon de livraison */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">N° de Bon de livraison</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">N° de Bon de livraison</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.deliveryBonNumber}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, deliveryBonNumber: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* N° de bon de réception */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">N° de bon de réception</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">N° de bon de réception</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.receptionBonNumber}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, receptionBonNumber: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Heure de réception */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Heure de réception</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Heure de réception</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="time"
                         step={60}
                         value={currentLot.data.header.receptionTime}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, receptionTime: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Etats des caisses */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Etats des caisses (C/NC)</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Etats des caisses (C/NC)</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.boxState}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, boxState: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Matricule */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Matricule</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Matricule</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.matricule}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, matricule: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Variété */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Variété</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Variété</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.variety}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, variety: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Producteur */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Producteur</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Producteur</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.producer}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, producer: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Contrôle qualité camion */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Contrôle qualité de états Camion : Odeur ; corps étranger ; nettoyage. (C/NC)</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Contrôle qualité de états Camion : Odeur ; corps étranger ; nettoyage. (C/NC)</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.truckQuality}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, truckQuality: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Nombre total de palettes */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Nombre total de palettes</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Nombre total de palettes</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.totalPallets}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, totalPallets: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Poids NET */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Poids NET</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Poids NET</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.netWeight}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, netWeight: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* N° de lot du produit */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">N° de lot du produit</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">N° de lot du produit</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.header.productLotNumber}
                         onChange={(e) => updateCurrentLot({ header: { ...currentLot.data.header, productLotNumber: e.target.value } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Quality rows */}
                   {/* Fruit avec trace de maladie */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold" rowSpan={2}>
                       Nbr Fruit avec trace de maladie
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       Nbr de fruits<br />(max 10u)
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       Poids
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       %
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="border border-gray-200 p-2" colSpan={3}></td>
                   </tr>
                   <tr>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.diseaseTraces.count}
@@ -919,61 +1026,56 @@ const ControleReception: React.FC = () => {
                             },
                           })
                         }
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.diseaseTraces.weight}
                         onChange={(e) => {
                           const weight = e.target.value;
-                          const percentage = currentLot.data.header.netWeight ? 
-                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
-                          
                           const newQC = {
                             ...currentLot.data.qualityChecks,
                             diseaseTraces: {
                               ...currentLot.data.qualityChecks.diseaseTraces,
                               weight,
-                              percentage,
                             },
                           };
-                          const total = computeTotalDefects(newQC);
-                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                          updateCurrentLot({ qualityChecks: newQC });
                         }}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.diseaseTraces.percentage}
                         readOnly
-                        className="w-full text-xs border-none outline-none bg-gray-100"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-gray-100 text-gray-700"
                       />
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="p-3" colSpan={3}></td>
                   </tr>
 
                   {/* Nbr fruit murs */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold" rowSpan={2}>
                       Nbr fruit murs
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       Nbr de fruits<br />(max 0u)
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       Poids
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       %
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="border border-gray-200 p-2" colSpan={3}></td>
                   </tr>
                   <tr>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.ripeFruit.count}
@@ -988,61 +1090,56 @@ const ControleReception: React.FC = () => {
                             },
                           })
                         }
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.ripeFruit.weight}
                         onChange={(e) => {
                           const weight = e.target.value;
-                          const percentage = currentLot.data.header.netWeight ? 
-                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
-                          
                           const newQC = {
                             ...currentLot.data.qualityChecks,
                             ripeFruit: {
                               ...currentLot.data.qualityChecks.ripeFruit,
                               weight,
-                              percentage,
                             },
                           };
-                          const total = computeTotalDefects(newQC);
-                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                          updateCurrentLot({ qualityChecks: newQC });
                         }}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.ripeFruit.percentage}
                         readOnly
-                        className="w-full text-xs border-none outline-none bg-gray-100"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-gray-100 text-gray-700"
                       />
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="p-3" colSpan={3}></td>
                   </tr>
 
                   {/* Nbr fruit Terreux */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold" rowSpan={2}>
                       Nbr fruit Terreux
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       Nbr de fruits<br />(max 8u)
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       Poids
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">
                       %
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="border border-gray-200 p-2" colSpan={3}></td>
                   </tr>
                   <tr>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.dirtyFruit.count}
@@ -1057,196 +1154,181 @@ const ControleReception: React.FC = () => {
                             },
                           })
                         }
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.dirtyFruit.weight}
                         onChange={(e) => {
                           const weight = e.target.value;
-                          const percentage = currentLot.data.header.netWeight ? 
-                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
-                          
                           const newQC = {
                             ...currentLot.data.qualityChecks,
                             dirtyFruit: {
                               ...currentLot.data.qualityChecks.dirtyFruit,
                               weight,
-                              percentage,
                             },
                           };
-                          const total = computeTotalDefects(newQC);
-                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                          updateCurrentLot({ qualityChecks: newQC });
                         }}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.dirtyFruit.percentage}
                         readOnly
-                        className="w-full text-xs border-none outline-none bg-gray-100"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-gray-100 text-gray-700"
                       />
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="p-3" colSpan={3}></td>
                   </tr>
 
                   {/* Epiderme et brulures de soleil */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>Epiderme et brulures de soleil</td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">Nbr de fruits<br />(max 6cm²)</td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">Poids</td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">%</td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold" rowSpan={2}>Epiderme et brulures de soleil</td>
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">Nbr de fruits<br />(max 6cm²)</td>
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">Poids</td>
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">%</td>
+                    <td className="border border-gray-200 p-2" colSpan={3}></td>
                   </tr>
                   <tr>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.sunBurns.count}
                         onChange={(e) => updateCurrentLot({ qualityChecks: { ...currentLot.data.qualityChecks, sunBurns: { ...currentLot.data.qualityChecks.sunBurns, count: e.target.value } } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.sunBurns.weight}
                         onChange={(e) => {
                           const weight = e.target.value;
-                          const percentage = currentLot.data.header.netWeight ? 
-                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
-                          
                           const newQC = {
                             ...currentLot.data.qualityChecks,
                             sunBurns: {
                               ...currentLot.data.qualityChecks.sunBurns,
                               weight,
-                              percentage,
                             },
                           };
-                          const total = computeTotalDefects(newQC);
-                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                          updateCurrentLot({ qualityChecks: newQC });
                         }}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.sunBurns.percentage}
                         readOnly
-                        className="w-full text-xs border-none outline-none bg-gray-100"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-gray-100 text-gray-700"
                       />
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="p-3" colSpan={3}></td>
                   </tr>
 
                   {/* Nbr fruit Sans pédoncule */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold" rowSpan={2}>Nbr fruit
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold" rowSpan={2}>Nbr fruit
                       <br />
                       Sans pédoncule
                     </td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">Nbr de fruits</td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">Poids</td>
-                    <td className="bg-lime-200 border border-black p-1 font-bold text-center">%</td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">Nbr de fruits</td>
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">Poids</td>
+                    <td className="bg-gray-100 border border-gray-200 p-2 font-bold text-center">%</td>
+                    <td className="border border-gray-200 p-2" colSpan={3}></td>
                   </tr>
                   <tr>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.withoutStem.count}
                         onChange={(e) => updateCurrentLot({ qualityChecks: { ...currentLot.data.qualityChecks, withoutStem: { ...currentLot.data.qualityChecks.withoutStem, count: e.target.value } } })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.withoutStem.weight}
                         onChange={(e) => {
                           const weight = e.target.value;
-                          const percentage = currentLot.data.header.netWeight ? 
-                            ((parseFloat(weight) || 0) / parseFloat(currentLot.data.header.netWeight) * 100).toFixed(2) : '0.00';
-                          
                           const newQC = {
                             ...currentLot.data.qualityChecks,
                             withoutStem: {
                               ...currentLot.data.qualityChecks.withoutStem,
                               weight,
-                              percentage,
                             },
                           };
-                          const total = computeTotalDefects(newQC);
-                          updateCurrentLot({ qualityChecks: newQC, totalDefects: total });
+                          updateCurrentLot({ qualityChecks: newQC });
                         }}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
-                    <td className="border border-black p-1">
+                    <td className="p-3 border-r border-gray-200">
                       <input
                         type="text"
                         value={currentLot.data.qualityChecks.withoutStem.percentage}
                         readOnly
-                        className="w-full text-xs border-none outline-none bg-gray-100"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-gray-100 text-gray-700"
                       />
                     </td>
-                    <td className="border border-black p-1" colSpan={3}></td>
+                    <td className="p-3" colSpan={3}></td>
                   </tr>
 
                   {/* Totalité des défauts % */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Totalité des défauts %</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Totalité des défauts %</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.totalDefects}
                         readOnly
-                        className="w-full text-xs border-none outline-none bg-gray-100"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-gray-100 text-gray-700 font-medium"
                       />
                     </td>
                   </tr>
 
                   {/* Couleur C/NC */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Couleur C/NC</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Couleur C/NC</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.color}
                         onChange={(e) => updateCurrentLot({ color: e.target.value })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Odeur C / NC */}
-                  <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Odeur C / NC</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                  <tr className="border-b border-gray-200">
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Odeur C / NC</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.odor}
                         onChange={(e) => updateCurrentLot({ odor: e.target.value })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
 
                   {/* Décision + Action */}
                   <tr>
-                    <td className="bg-lime-300 border border-black p-1 font-bold">Décision + Action</td>
-                    <td className="border border-black p-1" colSpan={6}>
+                    <td className="bg-[#161f2e] text-white p-3 font-bold">Décision + Action</td>
+                    <td className="p-3" colSpan={6}>
                       <input
                         type="text"
                         value={currentLot.data.decision}
                         onChange={(e) => updateCurrentLot({ decision: e.target.value })}
-                        className="w-full text-xs border-none outline-none"
+                        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </td>
                   </tr>
@@ -1254,19 +1336,19 @@ const ControleReception: React.FC = () => {
               </table>
 
               {/* Footer notes */}
-              <div className="p-2 text-xs border-t border-black">
-                <p className="font-semibold">Note : en cas de présence :</p>
-                <p>• En cas d'un taux élevé (10%) des écarts il faut identifier le lot par une F.P et informer le R.Q</p>
+              <div className="p-4 text-sm border-t border-gray-200 bg-gray-50">
+                <p className="font-semibold text-gray-700">Note : en cas de présence :</p>
+                <p className="text-gray-600">• En cas d'un taux élevé (10%) des écarts il faut identifier le lot par une F.P et informer le R.Q</p>
               </div>
 
-              <div className="text-center p-4 border-t border-black">
-                <p className="font-bold text-sm">Visa responsable de réception</p>
-                <div className="mt-1">
+              <div className="text-center p-6 border-t border-gray-200 bg-gray-50">
+                <p className="font-bold text-lg text-gray-900 mb-4">Visa responsable de réception</p>
+                <div className="flex justify-center">
                   <input
                     type="text"
                     value={currentLot.data.responsibleSignature}
                     onChange={(e) => updateCurrentLot({ responsibleSignature: e.target.value })}
-                    className="w-64 text-xs border border-black rounded px-2 py-1"
+                    className="w-96 text-sm border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Nom et signature"
                   />
                 </div>
@@ -1274,141 +1356,175 @@ const ControleReception: React.FC = () => {
             </div>
 
             {/* Actions */}
-            <div className="p-4 text-center flex flex-wrap gap-3 justify-center">
-              <button onClick={generatePDF} className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors">
-                <FilePlus size={20} /> Générer PDF
+            <div className="mt-8 flex flex-wrap gap-3 md:gap-4 justify-center">
+              <button
+                onClick={generatePDF}
+                className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 transition-all hover:shadow-lg"
+              >
+                <FilePlus size={20} />
+                Générer PDF
               </button>
-              <button onClick={resetForm} className="flex items-center gap-2 bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-colors">
-                <RefreshCw size={20} /> Réinitialiser
+              <button
+                onClick={resetForm}
+                className="flex items-center gap-2 bg-gray-600 text-white px-6 py-3 rounded-xl hover:bg-gray-700 transition-all hover:shadow-lg"
+              >
+                <RefreshCw size={20} />
+                Réinitialiser
               </button>
-              <button onClick={saveToArchive} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
-                <Save size={20} /> Archiver
+              <button
+                onClick={saveToArchive}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-all hover:shadow-lg"
+              >
+                <Save size={20} />
+                Archiver
               </button>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Enhanced Archives Section */}
-      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-xl mt-6 p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <Archive className="text-blue-600" size={24} />
-              Archives - Bon de Réception
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">Les archives sont des copies figées de vos fiches de contrôle. Utilisez Archiver pour sauvegarder une fiche.</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-gray-500">
-              {filteredArchives.length} archive{filteredArchives.length !== 1 ? 's' : ''} trouvée{filteredArchives.length !== 1 ? 's' : ''}
+        {/* Enhanced Archives Section - Collapsible */}
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <button
+            onClick={() => setShowArchives(!showArchives)}
+            className="w-full p-6 flex items-center justify-between bg-[#161f2e] text-white hover:bg-[#1e293b] transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Archive size={24} />
+              <div className="text-left">
+                <h2 className="text-xl font-bold">Archives - Bon de Réception</h2>
+                <p className="text-gray-300 text-sm">Les fiches archivées sont des copies figées de vos contrôles</p>
+              </div>
             </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-              <input
-                type="text"
-                placeholder="Rechercher par N° bon réception..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none w-64 text-sm"
-              />
+            <div className="flex items-center gap-2">
+              <span className="text-sm bg-white/20 px-3 py-1 rounded-full">
+                {filteredArchives.length} archive{filteredArchives.length !== 1 ? 's' : ''}
+              </span>
+              {showArchives ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
             </div>
-          </div>
-        </div>
+          </button>
 
-        {loadingArchives ? (
-          <div className="text-gray-500 text-center py-12">
-            <RefreshCw className="animate-spin mx-auto mb-3" size={32} />
-            <p>Chargement des archives...</p>
-          </div>
-        ) : filteredArchives.length === 0 ? (
-          <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
-            <Archive className="mx-auto mb-3 text-gray-400" size={48} />
-            <h3 className="text-lg font-medium text-gray-600 mb-2">
-              {searchTerm ? 'Aucune archive trouvée' : 'Aucune archive pour le moment'}
-            </h3>
-            <p className="text-gray-500 mb-4">
-              {searchTerm ? 'Aucun résultat pour votre recherche.' : 'Les fiches que vous archivez apparaîtront ici.'}
-            </p>
-            <button 
-              onClick={saveToArchive}
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Save size={16} />
-              Archiver la fiche actuelle
-            </button>
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredArchives.map((archive) => (
-              <div key={archive.id} className="border-2 border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-200 bg-white hover:border-blue-200 group">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-lg text-gray-800 mb-2 group-hover:text-blue-600 transition-colors">
-                      {archive.data.header.receptionBonNumber || 'Sans N° bon réception'}
-                    </div>
-                    <div className="text-gray-600 mb-2 truncate">
-                      {archive.lotNumber}
-                    </div>
-                    <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                      archive.status === 'termine' ? 'bg-green-100 text-green-800 border border-green-200' :
-                      archive.status === 'en_cours' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
-                      'bg-gray-100 text-gray-600 border border-gray-200'
-                    }`}>
-                      {archive.status}
-                    </div>
-                  </div>
-                  <div className="text-right text-xs text-gray-500 bg-gray-50 rounded-lg px-2 py-1">
-                    <div>Créé le</div>
-                    <div>{archive.createdAt.toLocaleDateString('fr-FR')}</div>
-                  </div>
-                </div>
-
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Prestataire:</span>
-                    <span className="font-medium text-gray-800 truncate ml-2 text-right">
-                      {archive.data.header.provider || 'Non renseigné'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Variété:</span>
-                    <span className="font-medium text-gray-800">{archive.data.header.variety || 'Non renseigné'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Date réception:</span>
-                    <span className="font-medium text-gray-800">{archive.data.header.deliveryDate || 'Non renseigné'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Poids NET:</span>
-                    <span className="font-medium text-gray-800">{archive.data.header.netWeight || 'Non renseigné'}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-3 border-t border-gray-100">
-                  <button
-                    onClick={() => loadFromArchive(archive)}
-                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                  >
-                    <Eye size={16} />
-                    Charger
-                  </button>
-                  <button
-                    onClick={() => deleteArchive(archive.id)}
-                    className="flex items-center justify-center px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                    title="Supprimer"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-
-                <div className="text-xs text-gray-400 mt-3 text-center">
-                  Dernière modification: {archive.updatedAt.toLocaleDateString('fr-FR')} à {archive.updatedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+          {showArchives && (
+            <div className="p-6">
+              {/* Search Bar */}
+              <div className="mb-6">
+                <div className="relative max-w-md mx-auto">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <input
+                    type="text"
+                    placeholder="Rechercher par N° bon réception, prestataire..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-12 pr-10 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X size={20} />
+                    </button>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+
+              {loadingArchives ? (
+                <div className="text-center py-12">
+                  <RefreshCw className="animate-spin mx-auto mb-4" size={32} />
+                  <p className="text-gray-600">Chargement des archives...</p>
+                </div>
+              ) : filteredArchives.length === 0 ? (
+                <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-2xl">
+                  <Archive className="mx-auto mb-4 text-gray-400" size={48} />
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                    {searchTerm ? 'Aucune archive trouvée' : 'Aucune archive pour le moment'}
+                  </h3>
+                  <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                    {searchTerm ? 'Aucun résultat pour votre recherche.' : 'Les fiches que vous archivez apparaîtront ici.'}
+                  </p>
+                  {!searchTerm && (
+                    <button
+                      onClick={saveToArchive}
+                      className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-colors"
+                    >
+                      <Save size={18} />
+                      Archiver la fiche actuelle
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredArchives.map((archive) => (
+                    <div key={archive.id} className="border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-200 hover:border-blue-300 group">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-lg text-gray-900 mb-2 group-hover:text-blue-600 transition-colors truncate">
+                            {archive.data.header.receptionBonNumber || 'Sans N°'}
+                          </div>
+                          <div className="text-gray-600 text-sm mb-3 truncate">
+                            {archive.lotNumber}
+                          </div>
+                          <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                            archive.status === 'termine' ? 'bg-green-100 text-green-800' :
+                            archive.status === 'en_cours' ? 'bg-amber-100 text-amber-800' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {archive.status}
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-gray-500 bg-gray-50 rounded-lg px-2 py-1 ml-2">
+                          <div>Créé le</div>
+                          <div>{archive.createdAt.toLocaleDateString('fr-FR')}</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 mb-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Prestataire:</span>
+                          <span className="font-medium text-gray-900 truncate ml-2 text-right max-w-[150px]">
+                            {archive.data.header.provider || 'Non renseigné'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Variété:</span>
+                          <span className="font-medium text-gray-900">{archive.data.header.variety || 'Non renseigné'}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Date réception:</span>
+                          <span className="font-medium text-gray-900">{archive.data.header.deliveryDate || 'Non renseigné'}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Poids NET:</span>
+                          <span className="font-medium text-gray-900">{archive.data.header.netWeight || 'Non renseigné'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-4 border-t border-gray-100">
+                        <button
+                          onClick={() => loadFromArchive(archive)}
+                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          <Eye size={16} />
+                          Charger
+                        </button>
+                        <button
+                          onClick={() => deleteArchive(archive.id)}
+                          className="flex items-center justify-center px-3 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                          title="Supprimer"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+
+                      <div className="text-xs text-gray-400 mt-4 pt-2 border-t border-gray-100">
+                        Modifié: {archive.updatedAt.toLocaleDateString('fr-FR')} à {archive.updatedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

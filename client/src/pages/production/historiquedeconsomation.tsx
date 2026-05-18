@@ -24,9 +24,27 @@ import {
   Activity,
   Package,
   Clock,
-  Users
+  Users,
+  Factory,
+  Database,
+  HardDrive,
+  Settings,
+  Scale,
+  Layers,
+  History,
+  FileText
 } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+// Color constants matching your industrial theme
+const PRIMARY_COLOR = [31, 42, 56]; // rgb(31, 42, 56) - Dark blue/gray
+const SECONDARY_COLOR = [16, 185, 129]; // Emerald green
+const ACCENT_COLOR = [59, 130, 246]; // Blue for actions
+const WARNING_COLOR = [245, 158, 11]; // Amber
+const DANGER_COLOR = [239, 68, 68]; // Red
+const SUCCESS_COLOR = [16, 185, 129]; // Green
+const LIGHT_BG = [249, 250, 251]; // Light gray
+const BORDER_COLOR = [229, 231, 235]; // Border gray
 
 // Type definitions
 interface Material {
@@ -81,10 +99,10 @@ export default function EnhancedConsumptionTracker() {
   // Check authentication status
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin mb-4">
-            <RefreshCw className="h-10 w-10 text-blue-500" />
+            <RefreshCw className="h-10 w-10" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
           </div>
           <p className="text-gray-600 text-lg">Vérification de l'authentification...</p>
         </div>
@@ -94,8 +112,8 @@ export default function EnhancedConsumptionTracker() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-xl shadow-lg">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-lg shadow-sm border border-gray-200">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-semibold text-gray-800 mb-2">Authentification requise</h2>
           <p className="text-gray-600 mb-4">
@@ -117,21 +135,18 @@ export default function EnhancedConsumptionTracker() {
       const inventoryData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        // Map inventory fields to material fields expected by the component
         name: doc.data().itemName,
         current_stock: parseFloat(doc.data().quantity) || 0,
         alert_threshold: parseFloat(doc.data().alertThreshold) || 10,
         unit: doc.data().unit || 'unité',
         itemType: doc.data().itemType || 'Matériel',
-        isConsumable: doc.data().isConsumable !== false // default to true if not specified
+        isConsumable: doc.data().isConsumable !== false
       }));
       
-      // Filter only consumable items for production consumption
       const consumableMaterials = inventoryData.filter(item => item.isConsumable);
       console.log(`Found ${consumableMaterials.length} consumable materials`);
       setMaterials(consumableMaterials);
       
-      // Initialize consumption with zeros
       const initialConsumption: Record<string, number> = {};
       consumableMaterials.forEach(material => {
         initialConsumption[material.id] = 0;
@@ -151,7 +166,7 @@ export default function EnhancedConsumptionTracker() {
           message: "Erreur lors du chargement des matériaux" 
         });
       }
-      throw error; // Re-throw to be caught by the calling function
+      throw error;
     }
   };
 
@@ -165,7 +180,6 @@ export default function EnhancedConsumptionTracker() {
       const historyData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        // Map consumption fields to history fields expected by the component
         itemName: doc.data().itemName,
         quantity: parseFloat(doc.data().quantity) || 0,
         date: doc.data().date || new Date(doc.data().timestamp?.toDate()).toISOString().split('T')[0],
@@ -190,22 +204,20 @@ export default function EnhancedConsumptionTracker() {
           message: "Erreur lors du chargement de l'historique" 
         });
       }
-      throw error; // Re-throw to be caught by the calling function
+      throw error;
     }
   };
 
   // Initialize data
   useEffect(() => {
     const fetchData = async () => {
-      if (!user) return; // Don't fetch if no user
+      if (!user) return;
       
       setLoading(true);
       try {
-        // Fetch real data from Firebase
         await fetchMaterials();
         await fetchConsumptionHistory();
 
-        // Trigger animation
         setTimeout(() => setAnimateItems(true), 100);
       } catch (error: any) {
         console.error("Failed to fetch data:", error);
@@ -226,7 +238,7 @@ export default function EnhancedConsumptionTracker() {
     };
 
     fetchData();
-  }, [user]); // Add user dependency
+  }, [user]);
 
   // Calculate remaining stock
   const calculateRemainingStock = (material: Material): number => {
@@ -248,7 +260,6 @@ export default function EnhancedConsumptionTracker() {
   useEffect(() => {
     let filtered = historyData;
 
-    // Filter by date range
     if (dateRange.start) {
       filtered = filtered.filter(item => item.date >= dateRange.start);
     }
@@ -256,12 +267,10 @@ export default function EnhancedConsumptionTracker() {
       filtered = filtered.filter(item => item.date <= dateRange.end);
     }
 
-    // Filter by material
     if (selectedMaterial !== 'all') {
       filtered = filtered.filter(item => item.itemName === selectedMaterial);
     }
 
-    // Filter by time period
     const now = new Date();
     if (historyFilter === 'today') {
       const today = now.toISOString().split('T')[0];
@@ -336,12 +345,10 @@ export default function EnhancedConsumptionTracker() {
 
     setSubmitting(true);
     try {
-      // Save consumption records to Firebase and update inventory
       for (const item of consumedMaterials) {
         const material = materials.find(m => m.id === item.id);
         if (!material) continue;
 
-        // 1. Add consumption record to Firebase
         const consumptionData = {
           itemId: item.id,
           itemName: item.material_name,
@@ -356,14 +363,12 @@ export default function EnhancedConsumptionTracker() {
 
         await addDoc(collection(db, "consumption"), consumptionData);
 
-        // 2. Update inventory quantity in Firebase
         const newQuantity = material.current_stock - item.consumed_qty;
         await updateDoc(doc(db, "inventory", item.id), { 
-          quantity: newQuantity.toString() // Store as string to match existing format
+          quantity: newQuantity.toString()
         });
       }
 
-      // Refresh data from Firebase
       await fetchMaterials();
       await fetchConsumptionHistory();
 
@@ -427,7 +432,7 @@ export default function EnhancedConsumptionTracker() {
     }[notification.type];
 
     return (
-      <div className={`fixed top-4 right-4 z-50 flex items-center p-4 max-w-xs rounded-xl shadow-lg ${styles.bg} border-l-4 animate-in slide-in-from-right-5 duration-300`}>
+      <div className={`fixed top-4 right-4 z-50 flex items-center p-4 max-w-xs rounded-lg shadow-sm ${styles.bg} border-l-4 animate-in slide-in-from-right-5 duration-300`}>
         <div className="flex-shrink-0">{styles.icon}</div>
         <div className="ml-3 mr-2 flex-grow">
           <p className={`text-sm font-medium ${styles.text}`}>{notification.message}</p>
@@ -488,65 +493,155 @@ export default function EnhancedConsumptionTracker() {
   const pieData = preparePieData();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="min-h-screen bg-gray-50">
       {renderNotification()}
 
-      <div className="max-w-7xl mx-auto p-6">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-2">
-            Gestion de Consommation
-          </h1>
-          <p className="text-gray-600 text-lg">Suivez et analysez la consommation de vos matériaux</p>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="mb-8">
-          <div className="flex flex-wrap border-b border-gray-200 bg-white rounded-t-xl shadow-sm">
-            <button
-              onClick={() => setActiveTab('consumption')}
-              className={`px-6 py-4 font-medium text-sm transition-all duration-200 ${
-                activeTab === 'consumption'
-                  ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Enregistrer Consommation
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-20">
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <div 
+                  className="h-12 w-12 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: `rgb(${PRIMARY_COLOR.join(',')})` }}
+                >
+                  <Factory className="h-6 w-6 text-white" />
+                </div>
               </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`px-6 py-4 font-medium text-sm transition-all duration-200 ${
-                activeTab === 'history'
-                  ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4" />
-                Historique & Analytiques
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Gestion de Consommation</h1>
+                <p className="text-sm text-gray-600">Suivi & Analytiques de Matériaux</p>
               </div>
-            </button>
+            </div>
+            <div className="flex items-center space-x-6">
+              <div className="text-right">
+                <div className="text-sm font-medium text-gray-900">
+                  {new Date().toLocaleDateString('fr-FR', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {user?.email || 'Connectez-vous'}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+      </header>
 
+      {/* Navigation */}
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex space-x-1">
+            {[
+              { id: 'consumption', label: 'Enregistrement', icon: Plus },
+              { id: 'history', label: 'Historique', icon: History },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`
+                  flex items-center space-x-3 py-4 px-6 text-sm font-medium transition-all duration-200
+                  ${activeTab === tab.id 
+                    ? `text-white border-b-2` 
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }
+                `}
+                style={activeTab === tab.id ? { 
+                  backgroundColor: `rgb(${PRIMARY_COLOR.join(',')})`,
+                  borderBottomColor: `rgb(${SECONDARY_COLOR.join(',')})`
+                } : {}}
+              >
+                <tab.icon className="h-4 w-4" />
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </nav>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'consumption' ? (
           /* Consumption Tab */
           <div className="space-y-6">
+            {/* Page Header */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                    <Package className="h-6 w-6" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
+                    Enregistrement de Consommation
+                  </h2>
+                  <p className="text-gray-600 mt-2">
+                    Saisissez la consommation journalière des matériaux de production
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className={`w-2 h-2 rounded-full ${user ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                  <span>{user ? 'Connecté à la base de données' : 'Mode hors ligne'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* System Status */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <HardDrive className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Matériaux: {materials.length}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                    <span className="text-sm text-gray-600">Alertes: {lowStockAlerts.length}</span>
+                  </div>
+                </div>
+                <div className="flex-1"></div>
+                <div className="text-xs text-gray-500">
+                  Données sauvegardées automatiquement
+                </div>
+              </div>
+            </div>
+
+            {/* Date Selection */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 text-gray-700">
+                  <div className="p-2 rounded-lg" style={{ backgroundColor: `rgba(${PRIMARY_COLOR.join(',')}, 0.1)` }}>
+                    <Calendar className="w-5 h-5" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
+                  </div>
+                  <label htmlFor="date" className="font-medium text-gray-800">Date de consommation:</label>
+                </div>
+                <input
+                  type="date"
+                  id="date"
+                  className="border border-gray-300 rounded-lg px-4 py-2 w-full sm:w-auto focus:ring-2 focus:border-transparent focus:outline-none transition-all duration-200"
+                  style={{ 
+                    borderColor: `rgb(${BORDER_COLOR.join(',')})`,
+                    focusRingColor: `rgb(${PRIMARY_COLOR.join(',')})`
+                  }}
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                />
+              </div>
+            </div>
+
             {/* Quick Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Total Matériaux</p>
                     <p className="text-2xl font-bold text-gray-900">{materials.length}</p>
                   </div>
-                  <Package className="w-8 h-8 text-blue-500" />
+                  <Package className="w-8 h-8" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
                 </div>
               </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Alertes Stock</p>
@@ -555,52 +650,33 @@ export default function EnhancedConsumptionTracker() {
                   <AlertTriangle className="w-8 h-8 text-orange-500" />
                 </div>
               </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Stock Total</p>
-                    <p className="text-2xl font-bold text-green-600">
+                    <p className="text-2xl font-bold" style={{ color: `rgb(${SECONDARY_COLOR.join(',')})` }}>
                       {materials.reduce((sum, m) => sum + m.current_stock, 0).toLocaleString()}
                     </p>
                   </div>
-                  <TrendingUp className="w-8 h-8 text-green-500" />
+                  <TrendingUp className="w-8 h-8" style={{ color: `rgb(${SECONDARY_COLOR.join(',')})` }} />
                 </div>
               </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">À Consommer</p>
-                    <p className="text-2xl font-bold text-purple-600">
+                    <p className="text-2xl font-bold" style={{ color: `rgb(${ACCENT_COLOR.join(',')})` }}>
                       {Object.values(consumption).reduce((sum, val) => sum + val, 0)}
                     </p>
                   </div>
-                  <Minus className="w-8 h-8 text-purple-500" />
+                  <Minus className="w-8 h-8" style={{ color: `rgb(${ACCENT_COLOR.join(',')})` }} />
                 </div>
-              </div>
-            </div>
-
-            {/* Date Selection */}
-            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                <div className="flex items-center gap-3 text-gray-700">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Calendar className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <label htmlFor="date" className="font-medium text-gray-800">Date de consommation:</label>
-                </div>
-                <input
-                  type="date"
-                  id="date"
-                  className="border border-gray-300 rounded-lg px-4 py-2 w-full sm:w-auto focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none transition-all duration-200"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                />
               </div>
             </div>
 
             {/* Low Stock Alerts */}
             {lowStockAlerts.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-orange-200">
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-orange-200">
                 <div
                   className="bg-gradient-to-r from-orange-50 to-yellow-50 border-l-4 border-orange-400 p-4 cursor-pointer flex justify-between items-center hover:from-orange-100 hover:to-yellow-100 transition-all"
                   onClick={() => setExpanded(!expanded)}
@@ -620,7 +696,7 @@ export default function EnhancedConsumptionTracker() {
                   <div className="p-4 bg-white">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {lowStockAlerts.map((name, index) => (
-                        <div key={index} className="flex items-center p-3 bg-orange-50 rounded-lg">
+                        <div key={index} className="flex items-center p-3 bg-orange-50 rounded-lg border border-orange-100">
                           <div className="h-2 w-2 bg-orange-500 rounded-full mr-3"></div>
                           <span className="text-sm text-gray-700">
                             Stock critique: <span className="font-semibold text-orange-700">{name}</span>
@@ -635,19 +711,19 @@ export default function EnhancedConsumptionTracker() {
 
             {/* Materials Table/Cards */}
             {loading ? (
-              <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+              <div className="bg-white rounded-lg shadow-sm p-12 text-center">
                 <div className="inline-block animate-spin mb-4">
-                  <RefreshCw className="h-10 w-10 text-blue-500" />
+                  <RefreshCw className="h-10 w-10" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
                 </div>
                 <p className="text-gray-600 text-lg">Chargement des données...</p>
               </div>
             ) : selectedDate ? (
               <>
                 {/* Desktop Table */}
-                <div className="hidden lg:block bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                <div className="hidden lg:block bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                      <thead className="bg-gray-50">
                         <tr>
                           <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Matériau
@@ -683,8 +759,11 @@ export default function EnhancedConsumptionTracker() {
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <div className="flex-shrink-0 h-10 w-10">
-                                    <div className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-400 to-blue-600 flex items-center justify-center">
-                                      <Package className="h-5 w-5 text-white" />
+                                    <div 
+                                      className="h-10 w-10 rounded-full flex items-center justify-center"
+                                      style={{ backgroundColor: `rgba(${PRIMARY_COLOR.join(',')}, 0.1)` }}
+                                    >
+                                      <Package className="h-5 w-5" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
                                     </div>
                                   </div>
                                   <div className="ml-4">
@@ -707,7 +786,11 @@ export default function EnhancedConsumptionTracker() {
                                     max={material.current_stock}
                                     value={consumption[material.id] || 0}
                                     onChange={(e) => handleConsumptionChange(material.id, e.target.value)}
-                                    className="border border-gray-300 rounded-lg px-3 py-2 w-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none transition-all"
+                                    className="border border-gray-300 rounded-lg px-3 py-2 w-24 text-sm focus:ring-2 focus:border-transparent focus:outline-none transition-all"
+                                    style={{ 
+                                      borderColor: `rgb(${BORDER_COLOR.join(',')})`,
+                                      focusRingColor: `rgb(${PRIMARY_COLOR.join(',')})`
+                                    }}
                                   />
                                   <span className="text-xs text-gray-500">{material.unit}</span>
                                 </div>
@@ -726,9 +809,9 @@ export default function EnhancedConsumptionTracker() {
                                 <div className="flex items-center">
                                   {renderStockIcon(status)}
                                   <span className={`ml-2 inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                    status === "danger" ? "bg-red-100 text-red-800" :
-                                    status === "warning" ? "bg-yellow-100 text-yellow-800" :
-                                    "bg-green-100 text-green-800"
+                                    status === "danger" ? "bg-red-100 text-red-800 border border-red-200" :
+                                    status === "warning" ? "bg-yellow-100 text-yellow-800 border border-yellow-200" :
+                                    "bg-green-100 text-green-800 border border-green-200"
                                   }`}>
                                     {status === "danger" ? "Critique" :
                                      status === "warning" ? "Alerte" : "Normal"}
@@ -752,7 +835,7 @@ export default function EnhancedConsumptionTracker() {
                     return (
                       <div
                         key={material.id}
-                        className={`bg-white rounded-xl shadow-sm p-5 border transition-all duration-300 hover:shadow-md ${
+                        className={`bg-white rounded-lg shadow-sm p-5 border transition-all duration-300 hover:shadow-md ${
                           status === "danger" ? "border-red-200 bg-red-50" :
                           status === "warning" ? "border-yellow-200 bg-yellow-50" : "border-gray-200"
                         } ${animateItems ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
@@ -760,18 +843,21 @@ export default function EnhancedConsumptionTracker() {
                       >
                         <div className="flex justify-between items-start mb-4">
                           <div className="flex items-center">
-                            <div className="h-12 w-12 rounded-full bg-gradient-to-r from-blue-400 to-blue-600 flex items-center justify-center mr-3">
-                              <Package className="h-6 w-6 text-white" />
+                            <div 
+                              className="h-12 w-12 rounded-full flex items-center justify-center mr-3"
+                              style={{ backgroundColor: `rgba(${PRIMARY_COLOR.join(',')}, 0.1)` }}
+                            >
+                              <Package className="h-6 w-6" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
                             </div>
                             <div>
                               <h3 className="font-semibold text-gray-900">{material.name}</h3>
                               <p className="text-sm text-gray-500">{material.itemType}</p>
                             </div>
                           </div>
-                          <div className={`flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                            status === "danger" ? "bg-red-100 text-red-700" :
-                            status === "warning" ? "bg-yellow-100 text-yellow-700" :
-                            "bg-green-100 text-green-700"
+                          <div className={`flex items-center px-3 py-1 rounded-full text-sm font-medium border ${
+                            status === "danger" ? "bg-red-100 text-red-700 border-red-200" :
+                            status === "warning" ? "bg-yellow-100 text-yellow-700 border-yellow-200" :
+                            "bg-green-100 text-green-700 border-green-200"
                           }`}>
                             {renderStockIcon(status)}
                             <span className="ml-1">
@@ -782,14 +868,14 @@ export default function EnhancedConsumptionTracker() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 mb-4">
-                          <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                             <p className="text-xs font-medium text-gray-500 mb-1">Stock Actuel</p>
                             <p className="text-lg font-bold text-gray-900">
                               {material.current_stock.toLocaleString()}
                               <span className="text-xs text-gray-500 font-normal ml-1">{material.unit}</span>
                             </p>
                           </div>
-                          <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                             <p className="text-xs font-medium text-gray-500 mb-1">Stock Restant</p>
                             <p className={`text-lg font-bold ${
                               status === "danger" ? "text-red-700" :
@@ -810,7 +896,11 @@ export default function EnhancedConsumptionTracker() {
                               max={material.current_stock}
                               value={consumption[material.id] || 0}
                               onChange={(e) => handleConsumptionChange(material.id, e.target.value)}
-                              className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none transition-all"
+                              className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:ring-2 focus:border-transparent focus:outline-none transition-all"
+                              style={{ 
+                                borderColor: `rgb(${BORDER_COLOR.join(',')})`,
+                                focusRingColor: `rgb(${PRIMARY_COLOR.join(',')})`
+                              }}
                             />
                             <span className="text-sm text-gray-500 whitespace-nowrap">{material.unit}</span>
                           </div>
@@ -825,7 +915,7 @@ export default function EnhancedConsumptionTracker() {
                   <button
                     onClick={handleReset}
                     disabled={submitting}
-                    className="flex items-center justify-center px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-all duration-200 font-medium"
+                    className="flex items-center justify-center px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-all duration-200 font-medium border border-gray-200"
                   >
                     <RefreshCw className="mr-2 h-4 w-4" />
                     Réinitialiser
@@ -833,7 +923,10 @@ export default function EnhancedConsumptionTracker() {
                   <button
                     onClick={handleSubmit}
                     disabled={submitting}
-                    className={`flex items-center justify-center px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg shadow-sm hover:from-blue-700 hover:to-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all duration-200 font-medium`}
+                    className={`flex items-center justify-center px-8 py-3 text-white rounded-lg shadow-sm hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed transition-all duration-200 font-medium`}
+                    style={{ 
+                      backgroundColor: `rgb(${PRIMARY_COLOR.join(',')})`
+                    }}
                   >
                     {submitting ? (
                       <>
@@ -850,16 +943,16 @@ export default function EnhancedConsumptionTracker() {
                 </div>
               </>
             ) : (
-              <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-                <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-full flex items-center justify-center">
-                  <Calendar className="w-12 h-12 text-blue-500" />
+              <div className="bg-white rounded-lg shadow-sm p-12 text-center border border-gray-200">
+                <div className="w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center" style={{ backgroundColor: `rgba(${PRIMARY_COLOR.join(',')}, 0.1)` }}>
+                  <Calendar className="w-12 h-12" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
                 </div>
                 <h2 className="text-2xl font-semibold text-gray-800 mb-2">Sélectionnez une date</h2>
                 <p className="text-gray-600 mb-6 max-w-md mx-auto">
                   Choisissez une date pour commencer l'enregistrement de la consommation des matériaux
                 </p>
                 <div className="inline-block animate-bounce">
-                  <ChevronUp className="h-8 w-8 text-blue-400" />
+                  <ChevronUp className="h-8 w-8" style={{ color: `rgb(${ACCENT_COLOR.join(',')})` }} />
                 </div>
               </div>
             )}
@@ -867,48 +960,63 @@ export default function EnhancedConsumptionTracker() {
         ) : (
           /* History & Analytics Tab */
           <div className="space-y-6">
+            {/* Page Header */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                    <BarChart3 className="h-6 w-6" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
+                    Historique & Analytiques
+                  </h2>
+                  <p className="text-gray-600 mt-2">
+                    Analysez les tendances de consommation et suivez l'historique
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-xl text-white shadow-sm">
+              <div className="p-6 rounded-lg text-white shadow-sm" style={{ background: `linear-gradient(135deg, rgb(${PRIMARY_COLOR.join(',')}), rgb(${ACCENT_COLOR.join(',')}))` }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-blue-100 text-sm font-medium">Consommation Totale</p>
+                    <p className="text-white/90 text-sm font-medium">Consommation Totale</p>
                     <p className="text-2xl font-bold">{stats.totalConsumption}</p>
                   </div>
-                  <TrendingUp className="w-8 h-8 text-blue-200" />
+                  <TrendingUp className="w-8 h-8 text-white/80" />
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-green-500 to-green-600 p-6 rounded-xl text-white shadow-sm">
+              <div className="p-6 rounded-lg text-white shadow-sm" style={{ background: `linear-gradient(135deg, rgb(${SECONDARY_COLOR.join(',')}), rgb(20, 184, 166))` }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-green-100 text-sm font-medium">Matériaux Uniques</p>
+                    <p className="text-white/90 text-sm font-medium">Matériaux Uniques</p>
                     <p className="text-2xl font-bold">{stats.uniqueMaterials}</p>
                   </div>
-                  <Package className="w-8 h-8 text-green-200" />
+                  <Package className="w-8 h-8 text-white/80" />
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 rounded-xl text-white shadow-sm">
+              <div className="p-6 rounded-lg text-white shadow-sm" style={{ background: `linear-gradient(135deg, rgb(${WARNING_COLOR.join(',')}), rgb(245, 158, 11))` }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-purple-100 text-sm font-medium">Moyenne Journalière</p>
+                    <p className="text-white/90 text-sm font-medium">Moyenne Journalière</p>
                     <p className="text-2xl font-bold">{stats.averageDaily}</p>
                   </div>
-                  <Activity className="w-8 h-8 text-purple-200" />
+                  <Activity className="w-8 h-8 text-white/80" />
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 rounded-xl text-white shadow-sm">
+              <div className="p-6 rounded-lg text-white shadow-sm" style={{ background: `linear-gradient(135deg, rgb(139, 92, 246), rgb(124, 58, 237))` }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-orange-100 text-sm font-medium">Total Enregistrements</p>
+                    <p className="text-white/90 text-sm font-medium">Total Enregistrements</p>
                     <p className="text-2xl font-bold">{stats.totalRecords}</p>
                   </div>
-                  <Clock className="w-8 h-8 text-orange-200" />
+                  <Clock className="w-8 h-8 text-white/80" />
                 </div>
               </div>
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
               <div className="flex flex-wrap gap-4 items-center">
                 <div className="flex items-center gap-2">
                   <Filter className="w-5 h-5 text-gray-500" />
@@ -919,7 +1027,11 @@ export default function EnhancedConsumptionTracker() {
                   <select
                     value={historyFilter}
                     onChange={(e) => setHistoryFilter(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:border-transparent focus:outline-none"
+                    style={{ 
+                      borderColor: `rgb(${BORDER_COLOR.join(',')})`,
+                      focusRingColor: `rgb(${PRIMARY_COLOR.join(',')})`
+                    }}
                   >
                     <option value="all">Toutes les périodes</option>
                     <option value="today">Aujourd'hui</option>
@@ -930,7 +1042,7 @@ export default function EnhancedConsumptionTracker() {
                   <select
                     value={selectedMaterial}
                     onChange={(e) => setSelectedMaterial(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:border-transparent focus:outline-none"
                   >
                     <option value="all">Tous les matériaux</option>
                     {materials.map(material => (
@@ -942,7 +1054,7 @@ export default function EnhancedConsumptionTracker() {
                     type="date"
                     value={dateRange.start}
                     onChange={(e) => setDateRange(prev => ({...prev, start: e.target.value}))}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:border-transparent focus:outline-none"
                     placeholder="Date début"
                   />
 
@@ -950,7 +1062,7 @@ export default function EnhancedConsumptionTracker() {
                     type="date"
                     value={dateRange.end}
                     onChange={(e) => setDateRange(prev => ({...prev, end: e.target.value}))}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:border-transparent focus:outline-none"
                     placeholder="Date fin"
                   />
                 </div>
@@ -958,12 +1070,15 @@ export default function EnhancedConsumptionTracker() {
                 <div className="flex gap-2 ml-auto">
                   <button
                     onClick={() => setViewMode(viewMode === 'chart' ? 'table' : 'chart')}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors border border-gray-200"
                   >
                     {viewMode === 'chart' ? <Eye className="w-4 h-4" /> : <BarChart3 className="w-4 h-4" />}
                     {viewMode === 'chart' ? 'Vue Tableau' : 'Vue Graphique'}
                   </button>
-                  <button className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors">
+                  <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:opacity-90 transition-colors border border-gray-200" style={{ 
+                    backgroundColor: `rgba(${ACCENT_COLOR.join(',')}, 0.1)`,
+                    color: `rgb(${ACCENT_COLOR.join(',')})`
+                  }}>
                     <Download className="w-4 h-4" />
                     Exporter
                   </button>
@@ -975,36 +1090,36 @@ export default function EnhancedConsumptionTracker() {
             {viewMode === 'chart' ? (
               <div className="space-y-6">
                 {/* Chart Type Selector */}
-                <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+                <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
                   <div className="flex gap-2">
                     <button
                       onClick={() => setChartType('line')}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        chartType === 'line' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                        chartType === 'line' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'
                       }`}
                     >
                       Courbe
                     </button>
                     <button
                       onClick={() => setChartType('area')}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        chartType === 'area' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                        chartType === 'area' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'
                       }`}
                     >
                       Zone
                     </button>
                     <button
                       onClick={() => setChartType('bar')}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        chartType === 'bar' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                        chartType === 'bar' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'
                       }`}
                     >
                       Barres
                     </button>
                     <button
                       onClick={() => setChartType('pie')}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        chartType === 'pie' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                        chartType === 'pie' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'
                       }`}
                     >
                       Camembert
@@ -1014,7 +1129,7 @@ export default function EnhancedConsumptionTracker() {
 
                 {/* Charts */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                  <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
                     <h3 className="text-lg font-semibold text-gray-800 mb-4">
                       Évolution de la Consommation
                     </h3>
@@ -1041,10 +1156,10 @@ export default function EnhancedConsumptionTracker() {
                             <Line 
                               type="monotone" 
                               dataKey="total" 
-                              stroke="#3b82f6" 
+                              stroke={`rgb(${PRIMARY_COLOR.join(',')})`}
                               strokeWidth={3}
-                              dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
-                              activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
+                              dot={{ fill: `rgb(${PRIMARY_COLOR.join(',')})`, strokeWidth: 2, r: 4 }}
+                              activeDot={{ r: 6, stroke: `rgb(${PRIMARY_COLOR.join(',')})`, strokeWidth: 2 }}
                             />
                           </LineChart>
                         </ResponsiveContainer>
@@ -1066,16 +1181,10 @@ export default function EnhancedConsumptionTracker() {
                             <Area 
                               type="monotone" 
                               dataKey="total" 
-                              stroke="#3b82f6" 
-                              fill="url(#colorTotal)"
+                              stroke={`rgb(${PRIMARY_COLOR.join(',')})`}
+                              fill={`rgba(${PRIMARY_COLOR.join(',')}, 0.3)`}
                               fillOpacity={0.6}
                             />
-                            <defs>
-                              <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                              </linearGradient>
-                            </defs>
                           </AreaChart>
                         </ResponsiveContainer>
                       )}
@@ -1093,14 +1202,14 @@ export default function EnhancedConsumptionTracker() {
                                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                               }}
                             />
-                            <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="total" fill={`rgb(${PRIMARY_COLOR.join(',')})`} radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       )}
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                  <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
                     <h3 className="text-lg font-semibold text-gray-800 mb-4">
                       Répartition par Matériau
                     </h3>
@@ -1136,10 +1245,10 @@ export default function EnhancedConsumptionTracker() {
               </div>
             ) : (
               /* Table View */
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                    <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                           Date
@@ -1166,14 +1275,17 @@ export default function EnhancedConsumptionTracker() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
-                              <div className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-400 to-blue-600 flex items-center justify-center mr-3">
-                                <Package className="h-4 w-4 text-white" />
+                              <div 
+                                className="h-8 w-8 rounded-full flex items-center justify-center mr-3"
+                                style={{ backgroundColor: `rgba(${PRIMARY_COLOR.join(',')}, 0.1)` }}
+                              >
+                                <Package className="h-4 w-4" style={{ color: `rgb(${PRIMARY_COLOR.join(',')})` }} />
                               </div>
                               <span className="text-sm font-medium text-gray-900">{item.itemName}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
+                            <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full border border-gray-200">
                               {item.itemType}
                             </span>
                           </td>
@@ -1182,7 +1294,7 @@ export default function EnhancedConsumptionTracker() {
                             <span className="text-gray-500 text-xs font-normal ml-1">{item.unit}</span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
+                            <span className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full border border-blue-200">
                               {item.department}
                             </span>
                           </td>
@@ -1202,6 +1314,20 @@ export default function EnhancedConsumptionTracker() {
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 mt-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-500">
+              © {new Date().getFullYear()} Système de Gestion de Consommation. Fruits For You.
+            </div>
+            <div className="text-xs text-gray-400">
+              Version 2.0 • Conçu pour l'industrie
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -10,10 +10,10 @@ import { auth, db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { toast } from "sonner";
 
-export type UserRole = 'admin' | 'quality' | 'logistics' | 'reception' | 'production' | 'personnel' | 'comptabilite' | 'maintenance';
+export type UserRole = 'admin' | 'quality' | 'logistics' | 'reception' | 'production' | 'personnel' | 'comptabilite' | 'maintenance' | 'operator' | 'client' | 'support' | 'logistique' | 'comptability';
 
 interface CustomUser extends User {
-  role?: UserRole;
+  role?: string;
 }
 
 interface AuthContextType {
@@ -68,6 +68,18 @@ const getRoleFromEmail = (email: string): UserRole => {
   return 'quality';
 };
 
+  // Normalize role values coming from Firestore (support both english/french spellings)
+  const normalizeRole = (roleRaw: any): string => {
+    if (!roleRaw) return '';
+    const r = String(roleRaw).toLowerCase().trim();
+    if (r === 'logistique') return 'logistics';
+    if (r === 'comptability') return 'comptabilite';
+    if (r === 'comptabilité') return 'comptabilite';
+    if (r === 'comptabilite') return 'comptabilite';
+    if (r === 'qualite') return 'quality';
+    return r;
+  };
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -75,13 +87,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const customUser: CustomUser = {
-          ...firebaseUser,
-          role: getRoleFromEmail(firebaseUser.email || '')
-        };
-        setUser(customUser);
+        try {
+          // Prefer role stored in Firestore users/{uid}
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
+
+          let roleFromDoc = '';
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            roleFromDoc = normalizeRole(data?.role);
+            console.log('use-auth: role from Firestore:', data?.role, '->', roleFromDoc);
+          }
+
+          const finalRole = roleFromDoc || getRoleFromEmail(firebaseUser.email || '');
+
+          const customUser: CustomUser = {
+            ...firebaseUser,
+            role: finalRole,
+          };
+          // Persist role for quick debugging in the client
+          try {
+            localStorage.setItem('userRole', finalRole);
+          } catch (e) {
+            console.warn('Unable to write userRole to localStorage', e);
+          }
+          console.log('use-auth: final role set for user', firebaseUser.email, finalRole);
+          setUser(customUser);
+        } catch (error) {
+          console.error('Error fetching user role from Firestore:', error);
+          const fallbackRole = getRoleFromEmail(firebaseUser.email || '');
+          try {
+            localStorage.setItem('userRole', fallbackRole);
+          } catch (e) {
+            console.warn('Unable to write userRole to localStorage', e);
+          }
+          console.log('use-auth: fallback role used for user', firebaseUser.email, fallbackRole);
+          const customUser: CustomUser = {
+            ...firebaseUser,
+            role: fallbackRole,
+          };
+          setUser(customUser);
+        }
       } else {
         setUser(null);
       }
